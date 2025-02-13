@@ -1,0 +1,25 @@
+# Rust build artifacts and dependencies
+**/target/
+**/debug/
+**/release/
+Cargo.lock
+**/*.rs.bk
+
+# Project dependencies
+vulkano/
+winit/
+glam-rs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*

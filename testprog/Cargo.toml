@@ -1,0 +1,16 @@
+[package]
+name = "testprog"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "testprog"
+path = "main.rs"
+
+[dependencies]
+vulkano = { version = "0.35", default-features = true }
+vulkano-shaders = { version = "0.35" }
+vulkano-util = { version = "0.35" }
+winit = { version = "0.30.9", default-features = true }
+bytemuck = "1.9"
+glam = "0.25.0"

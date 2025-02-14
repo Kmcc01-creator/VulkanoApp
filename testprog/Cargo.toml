@@ -8,9 +8,9 @@ name = "testprog"
 path = "main.rs"
 
 [dependencies]
-vulkano = { version = "0.35", default-features = true }
+vulkano = { version = "0.35.1", default-features = true }
 vulkano-shaders = { version = "0.35" }
 vulkano-util = { version = "0.35" }
-winit = { version = "0.30.9", default-features = true }
+winit = { version = "0.30.9", features = ["x11", "wayland"] }
 bytemuck = "1.9"
-glam = "0.25.0"
+glam = "0.29.2"

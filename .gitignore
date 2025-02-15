@@ -15,6 +15,9 @@ glam-rs/
 .idea/
 *.swp
 *.swo
+*.ts
+*.json
+*.js
 
 # System files
 .DS_Store

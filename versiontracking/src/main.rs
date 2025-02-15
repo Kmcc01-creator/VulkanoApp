@@ -1,14 +1,15 @@
-use cargo_metadata::{MetadataCommand, Package};
-use clap::Parser;
-use dialoguer::{theme::ColorfulTheme, Select};
+use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
-use reqwest::Client;
-use semver::Version;
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::Command;
 use thiserror::Error;
-use walkdir::WalkDir;
+
+mod analysis;
+mod ast_comparator;
+mod ast_extractor;
+mod changes;
+mod crates_io;
+mod version_management;
 
 #[derive(Error, Debug)]
 pub enum VersionError {
@@ -27,6 +28,9 @@ pub enum VersionError {
     #[error("JSON serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 
+    #[error("AST error: {0}")]
+    AstError(#[from] ast_extractor::AstError),
+
     #[error("No Cargo.toml files found in the specified directory")]
     NoCargoFiles,
 
@@ -35,34 +39,93 @@ pub enum VersionError {
 
     #[error("Rate limit exceeded for crates.io API")]
     RateLimitExceeded,
+
+    #[error("Failed to analyze dependencies: {0}")]
+    AnalysisError(String),
+
+    #[error("Crate operation failed: {0}")]
+    CrateError(#[from] crates_io::CrateError),
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
-    #[arg(short, long)]
-    manifest_path: Option<String>,
+    #[command(subcommand)]
+    command: Commands,
+}
 
-    #[arg(short, long)]
-    json_output: bool,
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Check for version updates and security vulnerabilities
+    Check {
+        #[arg(short, long)]
+        manifest_path: Option<String>,
 
-    #[arg(short, long, default_value = "..")]
-    search_path: String,
+        #[arg(short, long)]
+        json_output: bool,
+
+        #[arg(short, long)]
+        recursive: bool,
+
+        #[arg(short, long, default_value = "..")]
+        search_path: String,
+    },
+    /// Compare two Rust source files for breaking changes
+    Compare {
+        /// Path to the old version of the source file
+        old_file: String,
+        /// Path to the new version of the source file
+        new_file: String,
+    },
+    /// Analyze breaking changes from dependency updates
+    Analyze {
+        #[arg(short, long)]
+        manifest_path: Option<String>,
+
+        #[arg(short, long)]
+        recursive: bool,
+    },
+    /// Search for crates on crates.io
+    Search {
+        /// Search query
+        query: String,
+
+        #[arg(short, long)]
+        categories: Vec<String>,
+
+        #[arg(short, long)]
+        json_output: bool,
+    },
+    /// Get crate recommendations based on current dependencies
+    Recommend {
+        #[arg(short, long)]
+        manifest_path: Option<String>,
+
+        #[arg(short, long)]
+        json_output: bool,
+    },
+    /// Download and analyze a specific crate
+    Inspect {
+        /// Name of the crate
+        name: String,
+        /// Version of the crate (optional)
+        version: Option<String>,
+    },
 }
 
 #[derive(Serialize)]
-struct DependencyInfo {
-    name: String,
-    current_version: String,
-    latest_version: Option<String>,
-    update_recommended: bool,
-    vulnerabilities: Vec<String>,
+pub struct DependencyInfo {
+    pub name: String,
+    pub current_version: String,
+    pub latest_version: Option<String>,
+    pub update_recommended: bool,
+    pub vulnerabilities: Vec<String>,
 }
 
 #[derive(Serialize)]
-struct Report {
-    dependencies: Vec<DependencyInfo>,
-    audit_output: String,
+pub struct Report {
+    pub dependencies: Vec<DependencyInfo>,
+    pub audit_output: String,
 }
 
 impl Report {
@@ -75,235 +138,123 @@ impl Report {
     }
 }
 
-fn find_cargo_files(search_path: &str) -> Result<Vec<PathBuf>, VersionError> {
-    let mut cargo_files = Vec::new();
-
-    for entry in WalkDir::new(search_path)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "Cargo.toml" {
-            cargo_files.push(entry.path().to_path_buf());
-        }
-    }
-
-    if cargo_files.is_empty() {
-        return Err(VersionError::NoCargoFiles);
-    }
-
-    Ok(cargo_files)
-}
-
-fn select_cargo_file(cargo_files: Vec<PathBuf>) -> Result<PathBuf, VersionError> {
-    let options: Vec<String> = cargo_files
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect();
-
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select a Cargo.toml file to analyze")
-        .items(&options)
-        .default(0)
-        .interact()
-        .map_err(|_| VersionError::SelectionCancelled)?;
-
-    Ok(cargo_files[selection].clone())
-}
-
 #[tokio::main]
 async fn main() -> Result<(), VersionError> {
     let args = Args::parse();
+    let cache_dir = dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from(".cache"))
+        .join("versiontracking");
+    let crates_client = crates_io::CratesIoClient::new(cache_dir)?;
 
-    // Get manifest path either from argument or by searching
-    let manifest_path = match args.manifest_path {
-        Some(path) => PathBuf::from(path),
-        None => {
-            let cargo_files = find_cargo_files(&args.search_path)?;
-            select_cargo_file(cargo_files)?
+    match args.command {
+        Commands::Check {
+            manifest_path,
+            json_output,
+            recursive,
+            search_path,
+        } => {
+            version_management::check_versions(manifest_path, json_output, recursive, search_path)
+                .await?;
         }
-    };
+        Commands::Compare { old_file, new_file } => {
+            version_management::compare_files(&old_file, &new_file)?;
+        }
+        Commands::Analyze {
+            manifest_path,
+            recursive,
+        } => {
+            version_management::analyze_dependencies(manifest_path, recursive).await?;
+        }
+        Commands::Search {
+            query,
+            categories,
+            json_output,
+        } => {
+            let results = crates_client
+                .search(
+                    &query,
+                    &categories.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                )
+                .await?;
 
-    println!("Analyzing {}", manifest_path.display().bold());
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                println!("\n{}", "Search Results:".blue().bold());
+                println!("{}", "==============".blue());
+                println!("Found {} crates\n", results.total);
 
-    // Get metadata
-    let metadata = get_metadata(manifest_path.to_str().unwrap())?;
-    let mut report = Report {
-        dependencies: Vec::new(),
-        audit_output: String::new(),
-    };
-
-    let client = Client::builder()
-        .user_agent("cargo-versioncheck/0.1.0")
-        .build()?;
-
-    // Process packages concurrently
-    let mut tasks = Vec::new();
-    for package in metadata.packages {
-        if let Some(source) = package.source.as_ref() {
-            if source.is_crates_io() {
-                let client = client.clone();
-                tasks.push(tokio::spawn(async move {
-                    get_dependency_info(&package, &client).await
-                }));
+                for krate in &results.crates {
+                    println!("{}", krate.name.green().bold());
+                    if let Some(desc) = &krate.description {
+                        println!("{}", desc);
+                    }
+                    println!("Downloads: {}", krate.downloads);
+                    if !krate.categories.is_empty() {
+                        println!("Categories: {}", krate.categories.join(", "));
+                    }
+                    println!();
+                }
             }
         }
-    }
+        Commands::Recommend {
+            manifest_path,
+            json_output,
+        } => {
+            let manifest_path = manifest_path
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("Cargo.toml"));
 
-    // Collect results
-    for task in tasks {
-        if let Ok(Some(dep)) = task.await {
-            report.dependencies.push(dep);
+            let metadata = version_management::get_metadata(manifest_path.to_str().unwrap())?;
+            let deps: Vec<String> = metadata
+                .packages
+                .iter()
+                .flat_map(|p| p.dependencies.iter().map(|d| d.name.clone()))
+                .collect();
+
+            let suggestions = crates_client.suggest_dependencies(&deps).await?;
+
+            if json_output {
+                println!("{}", serde_json::to_string_pretty(&suggestions)?);
+            } else {
+                println!("\n{}", "Recommendations:".blue().bold());
+                println!("{}", "===============".blue());
+
+                for (dep, similar) in &suggestions {
+                    println!("\nBased on {}: ", dep.green().bold());
+                    for krate in similar.iter().take(5) {
+                        println!("  - {} ({} downloads)", krate.name, krate.downloads);
+                        if let Some(desc) = &krate.description {
+                            println!("    {}", desc);
+                        }
+                    }
+                }
+            }
+        }
+        Commands::Inspect { name, version } => {
+            let metadata = crates_client.get_crate_metadata(&name).await?;
+            let version = version.unwrap_or_else(|| metadata.versions[0].clone());
+
+            println!("Downloading {} v{}", name.green().bold(), version);
+            let crate_path = crates_client.download_crate(&name, &version).await?;
+            let extract_path = crates_io::extract_crate(&crate_path)?;
+
+            println!("\n{}", "Crate Info:".blue().bold());
+            println!("{}", "==========".blue());
+            println!("Name: {}", metadata.name);
+            if let Some(desc) = metadata.description {
+                println!("Description: {}", desc);
+            }
+            println!("Downloads: {}", metadata.downloads);
+            if let Some(docs) = metadata.documentation {
+                println!("Documentation: {}", docs);
+            }
+            if let Some(repo) = metadata.repository {
+                println!("Repository: {}", repo);
+            }
+            println!("\nExtracted to: {}", extract_path.display());
         }
     }
-
-    report.dependencies.sort_by(|a, b| a.name.cmp(&b.name));
-
-    // Run cargo audit
-    report.audit_output = run_cargo_audit()?;
-
-    // Output report
-    output_report(&report, args.json_output)?;
 
     Ok(())
-}
-
-fn get_metadata(manifest_path: &str) -> Result<cargo_metadata::Metadata, VersionError> {
-    Ok(MetadataCommand::new().manifest_path(manifest_path).exec()?)
-}
-
-async fn get_dependency_info(package: &Package, client: &Client) -> Option<DependencyInfo> {
-    let name = &package.name;
-    let current_version = package.version.to_string();
-
-    let url = format!("https://crates.io/api/v1/crates/{}", name);
-    let response = client.get(&url).send().await.ok()?;
-
-    if response.status().is_client_error() {
-        if response.status().as_u16() == 429 {
-            eprintln!(
-                "{}",
-                "Rate limit exceeded for crates.io API. Some version information may be missing."
-                    .red()
-            );
-        }
-        return Some(DependencyInfo {
-            name: name.clone(),
-            current_version,
-            latest_version: None,
-            update_recommended: false,
-            vulnerabilities: Vec::new(),
-        });
-    }
-
-    if let Ok(json) = response.json::<serde_json::Value>().await {
-        if let Some(crate_info) = json.get("crate") {
-            return process_crate_info(name, &current_version, crate_info);
-        }
-    }
-
-    Some(DependencyInfo {
-        name: name.clone(),
-        current_version,
-        latest_version: None,
-        update_recommended: false,
-        vulnerabilities: Vec::new(),
-    })
-}
-
-fn process_crate_info(
-    name: &str,
-    current_version: &str,
-    crate_info: &serde_json::Value,
-) -> Option<DependencyInfo> {
-    let current_version = Version::parse(current_version).ok()?;
-
-    let latest_version = crate_info
-        .get("max_version")
-        .and_then(|v| v.as_str())
-        .and_then(|v| Version::parse(v).ok());
-
-    let update_recommended = latest_version
-        .as_ref()
-        .map(|v| v > &current_version)
-        .unwrap_or(false);
-
-    Some(DependencyInfo {
-        name: name.to_string(),
-        current_version: current_version.to_string(),
-        latest_version: latest_version.map(|v| v.to_string()),
-        update_recommended,
-        vulnerabilities: Vec::new(),
-    })
-}
-
-fn run_cargo_audit() -> Result<String, VersionError> {
-    let output = Command::new("cargo").arg("audit").output()?;
-    let mut audit_output = String::from_utf8_lossy(&output.stdout).to_string();
-
-    if !output.status.success() {
-        audit_output.push_str(&String::from_utf8_lossy(&output.stderr));
-    }
-
-    Ok(audit_output)
-}
-
-fn output_report(report: &Report, json_output: bool) -> Result<(), VersionError> {
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(report)?);
-    } else {
-        let (updates, current) = report.partition_dependencies();
-
-        if !updates.is_empty() {
-            println!("\n{}", "Updates Available:".yellow().bold());
-            println!("{}", "=================".yellow());
-            for dep in &updates {
-                println!(
-                    "{}: {} → {}",
-                    dep.name.blue().bold(),
-                    dep.current_version,
-                    dep.latest_version
-                        .as_deref()
-                        .unwrap_or("unknown")
-                        .yellow()
-                        .bold()
-                );
-            }
-        }
-
-        if !current.is_empty() {
-            println!("\n{}", "Up to Date:".green().bold());
-            println!("{}", "==========".green());
-            for dep in &current {
-                println!("{}: {}", dep.name.blue().bold(), dep.current_version);
-            }
-        }
-
-        // Print summary
-        println!("\n{}", "Summary:".bold());
-        println!(
-            "Total dependencies: {}",
-            report.dependencies.len().to_string().bold()
-        );
-        println!(
-            "Updates available: {}",
-            updates.len().to_string().yellow().bold()
-        );
-        println!("Up to date: {}", current.len().to_string().green().bold());
-
-        if !report.audit_output.is_empty() {
-            println!("\n{}", "Security Audit Results:".red().bold());
-            println!("{}", "=====================".red());
-            println!("{}", report.audit_output);
-        }
-    }
-    Ok(())
-}
-
-fn status_text(text: &str, update_needed: bool) -> String {
-    if update_needed {
-        text.yellow().bold().to_string()
-    } else {
-        text.green().bold().to_string()
-    }
 }

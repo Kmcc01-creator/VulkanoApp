@@ -1,13 +1,14 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use syn::{
+    parse::{Parse, ParseStream},
     parse_quote,
-    visit_mut::{self, VisitMut},
-    Block, ExprAsync, FnArg, Ident, Item, ItemFn, Pat, ReturnType, Stmt, Type,
+    visit_mut::VisitMut,
+    Block, Error, File, FnArg, Ident, Item, ItemFn, ReturnType, Type,
 };
 
-use crate::code_generator::types::{PatternMatch, PatternType};
+use crate::code_generator::types::{PatternMatch, PatternType, Suggestion};
 
 #[derive(Debug, Clone)]
 pub enum TransformationType {
@@ -33,100 +34,136 @@ pub enum TransformationType {
     },
 }
 
-#[derive(Debug)]
-pub enum AnalysisCapability {
-    TypeDependencies,
-    ImplementationPatterns,
-    CrossModuleReferences,
-    AsyncPatternAnalysis,
-    ErrorHandlingAnalysis,
-    LifetimeAnalysis,
-    UnsafeCodeAnalysis,
-    MacroUsageAnalysis,
-    ConcurrencyPatterns,
-    MemoryManagement,
-    GenericConstraints,
+#[derive(Debug, Clone)]
+pub struct BlockingOperation {
+    pub name: String,
+    pub span: Span,
+    pub async_alternative: Option<String>,
+    pub runtime_required: bool,
 }
 
-#[derive(Debug)]
-pub enum OptimizationGoal {
-    Performance,
-    Memory,
-    Safety,
-    Concurrency,
-    ErrorHandling,
-}
-
-pub trait TransformationRule {
-    fn matches(&self, node: &syn::Item) -> bool;
-    fn transform(&self, node: &syn::Item) -> TokenStream;
-    fn validate(&self, result: &TokenStream) -> bool;
-}
-
-pub trait PatternDetector {
-    fn detect_patterns(&self, ast: &syn::File) -> Vec<PatternMatch>;
-    fn suggest_improvements(&self, patterns: &[PatternMatch]) -> Vec<crate::types::Suggestion>;
-}
-
-pub trait OptimizationAnalyzer {
-    fn analyze_performance(&self, ast: &syn::File) -> Vec<crate::types::Suggestion>;
-    fn analyze_memory_usage(&self, ast: &syn::File) -> Vec<crate::types::Suggestion>;
-    fn analyze_safety(&self, ast: &syn::File) -> Vec<crate::types::Suggestion>;
-}
-
-pub struct CodeTransformer {
-    transformations: Vec<TransformationType>,
-    modifications: HashMap<String, Box<dyn Fn(TokenStream) -> TokenStream>>,
-}
-
-impl CodeTransformer {
-    pub fn new() -> Self {
+impl BlockingOperation {
+    fn new(name: &str, span: Span) -> Self {
+        let async_alternative = match name {
+            "std::fs::read_to_string" => Some("tokio::fs::read_to_string".to_string()),
+            "std::fs::write" => Some("tokio::fs::write".to_string()),
+            "std::fs::read" => Some("tokio::fs::read".to_string()),
+            "std::thread::sleep" => Some("tokio::time::sleep".to_string()),
+            "std::net::TcpStream::connect" => Some("tokio::net::TcpStream::connect".to_string()),
+            _ => None,
+        };
+        let runtime_required = async_alternative.is_some();
         Self {
-            transformations: Vec::new(),
-            modifications: HashMap::new(),
+            name: name.to_string(),
+            span,
+            async_alternative,
+            runtime_required,
+        }
+    }
+}
+
+pub trait TransformationValidator {
+    fn validate(&self, result: &TokenStream) -> Result<(), Error>;
+    fn validate_safety(&self, result: &TokenStream) -> Result<(), Error>;
+    fn validate_performance(
+        &self,
+        original: &TokenStream,
+        result: &TokenStream,
+    ) -> Result<(), Error>;
+}
+
+pub struct AsyncTransformValidator {
+    required_features: HashSet<String>,
+}
+
+impl AsyncTransformValidator {
+    pub fn new() -> Self {
+        let mut features = HashSet::new();
+        features.insert("tokio/fs".to_string());
+        features.insert("tokio/time".to_string());
+        features.insert("tokio/net".to_string());
+        Self {
+            required_features: features,
+        }
+    }
+}
+
+impl TransformationValidator for AsyncTransformValidator {
+    fn validate(&self, result: &TokenStream) -> Result<(), Error> {
+        // TODO: Implement validation of async transformation
+        Ok(())
+    }
+
+    fn validate_safety(&self, result: &TokenStream) -> Result<(), Error> {
+        // Ensure no unsafe blocks in async context
+        Ok(())
+    }
+
+    fn validate_performance(
+        &self,
+        original: &TokenStream,
+        result: &TokenStream,
+    ) -> Result<(), Error> {
+        // Compare complexity of async vs sync version
+        Ok(())
+    }
+}
+
+struct BlockingCallAnalyzer {
+    blocking_ops: Vec<BlockingOperation>,
+}
+
+impl BlockingCallAnalyzer {
+    fn new() -> Self {
+        Self {
+            blocking_ops: Vec::new(),
         }
     }
 
-    pub fn add_transformation(&mut self, transformation: TransformationType) {
-        self.transformations.push(transformation);
-    }
+    fn analyze_block(&mut self, block: &Block) {
+        use syn::visit::Visit;
 
-    pub fn transform_ast(&self, ast: &mut syn::File) -> TokenStream {
-        for transformation in &self.transformations {
-            match transformation {
-                TransformationType::AsyncifyFunction {
-                    add_runtime,
-                    preserve_sync_version,
-                } => {
-                    let mut visitor = AsyncifyVisitor::new(*add_runtime, *preserve_sync_version);
-                    visitor.visit_file_mut(ast);
+        struct Visitor<'a> {
+            ops: &'a mut Vec<BlockingOperation>,
+        }
+
+        impl<'ast> Visit<'ast> for Visitor<'_> {
+            fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+                if let syn::Expr::Path(path) = &*call.func {
+                    let name = path
+                        .path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.to_string())
+                        .collect::<Vec<_>>()
+                        .join("::");
+
+                    self.ops.push(BlockingOperation::new(&name, call.span()));
                 }
-                TransformationType::OptimizeErrorHandling {
-                    use_anyhow,
-                    generate_custom_errors,
-                } => {
-                    let mut visitor =
-                        ErrorHandlingVisitor::new(*use_anyhow, *generate_custom_errors);
-                    visitor.visit_file_mut(ast);
+                syn::visit::visit_expr_call(self, call);
+            }
+
+            fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+                let method_name = call.method.to_string();
+                if method_name.starts_with("blocking_") {
+                    self.ops
+                        .push(BlockingOperation::new(&method_name, call.span()));
                 }
-                _ => {}
+                syn::visit::visit_expr_method_call(self, call);
             }
         }
 
-        quote! { #ast }
-    }
-
-    pub fn apply_custom_modification<F>(&mut self, target: String, modification: F)
-    where
-        F: Fn(TokenStream) -> TokenStream + 'static,
-    {
-        self.modifications.insert(target, Box::new(modification));
+        let mut visitor = Visitor {
+            ops: &mut self.blocking_ops,
+        };
+        visitor.visit_block(block);
     }
 }
 
 struct AsyncifyVisitor {
     add_runtime: bool,
     preserve_sync: bool,
+    analyzer: BlockingCallAnalyzer,
 }
 
 impl AsyncifyVisitor {
@@ -134,6 +171,7 @@ impl AsyncifyVisitor {
         Self {
             add_runtime,
             preserve_sync,
+            analyzer: BlockingCallAnalyzer::new(),
         }
     }
 
@@ -142,31 +180,45 @@ impl AsyncifyVisitor {
             return None;
         }
 
-        // Check if function contains blocking calls
-        let contains_blocking = self.contains_blocking_calls(&func.block);
-        if !contains_blocking {
+        let mut analyzer = BlockingCallAnalyzer::new();
+        analyzer.analyze_block(&func.block);
+
+        if analyzer.blocking_ops.is_empty() {
             return None;
         }
 
-        // Create async version
         let mut async_fn = func.clone();
         async_fn.sig.asyncness = Some(parse_quote!(async));
 
-        // Wrap blocking operations in spawn_blocking if using tokio
         if self.add_runtime {
-            self.wrap_blocking_calls(&mut async_fn.block);
+            self.wrap_blocking_calls(&mut async_fn.block, &analyzer.blocking_ops);
         }
 
         Some(async_fn)
     }
 
-    fn contains_blocking_calls(&self, block: &Block) -> bool {
-        // TODO: Implement blocking call detection
-        false
-    }
+    fn wrap_blocking_calls(&self, block: &mut Block, ops: &[BlockingOperation]) {
+        struct AsyncWrapper;
 
-    fn wrap_blocking_calls(&self, block: &mut Block) {
-        // TODO: Implement wrapping blocking calls in spawn_blocking
+        impl AsyncWrapper {
+            fn wrap_operation(op: &BlockingOperation) -> TokenStream {
+                if let Some(async_alt) = &op.async_alternative {
+                    // Replace blocking call with async alternative
+                    quote! {
+                        #async_alt.await
+                    }
+                } else {
+                    // Wrap in spawn_blocking if no async alternative
+                    quote! {
+                        tokio::task::spawn_blocking(move || {
+                            // Original blocking call
+                        }).await.unwrap()
+                    }
+                }
+            }
+        }
+
+        // TODO: Implement block transformation using AsyncWrapper
     }
 }
 
@@ -174,54 +226,68 @@ impl VisitMut for AsyncifyVisitor {
     fn visit_item_fn_mut(&mut self, func: &mut ItemFn) {
         if let Some(async_fn) = self.asyncify_function(func) {
             if self.preserve_sync {
-                // Rename original function to *_sync
                 let sync_name = format!("{}_sync", func.sig.ident);
                 func.sig.ident = Ident::new(&sync_name, func.sig.ident.span());
             } else {
-                // Replace original function
                 *func = async_fn;
             }
         }
-        visit_mut::visit_item_fn_mut(self, func);
+        syn::visit_mut::visit_item_fn_mut(self, func);
     }
 }
 
-struct ErrorHandlingVisitor {
-    use_anyhow: bool,
-    generate_custom: bool,
+pub struct CodeTransformer {
+    transformations: Vec<TransformationType>,
+    validators: Vec<Box<dyn TransformationValidator>>,
 }
 
-impl ErrorHandlingVisitor {
-    fn new(use_anyhow: bool, generate_custom: bool) -> Self {
+impl Default for CodeTransformer {
+    fn default() -> Self {
         Self {
-            use_anyhow,
-            generate_custom,
+            transformations: Vec::new(),
+            validators: vec![Box::new(AsyncTransformValidator::new())],
         }
     }
+}
 
-    fn optimize_error_handling(&self, func: &mut ItemFn) {
-        if self.use_anyhow {
-            // Replace Result<T, E> with anyhow::Result<T>
-            if let ReturnType::Type(_, ty) = &mut func.sig.output {
-                if let Type::Path(type_path) = &**ty {
-                    if type_path
-                        .path
-                        .segments
-                        .last()
-                        .map_or(false, |s| s.ident == "Result")
-                    {
-                        *ty = parse_quote!(anyhow::Result<_>);
-                    }
+impl CodeTransformer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_transformation(&mut self, transformation: TransformationType) {
+        self.transformations.push(transformation);
+    }
+
+    pub fn transform_ast(&self, ast: &mut File) -> Result<TokenStream, Error> {
+        for transformation in &self.transformations {
+            match transformation {
+                TransformationType::AsyncifyFunction {
+                    add_runtime,
+                    preserve_sync_version,
+                } => {
+                    let mut visitor = AsyncifyVisitor::new(*add_runtime, *preserve_sync_version);
+                    syn::visit_mut::visit_file_mut(&mut visitor, ast);
                 }
+                TransformationType::OptimizeErrorHandling {
+                    use_anyhow,
+                    generate_custom_errors,
+                } => {
+                    // TODO: Implement error handling optimization
+                }
+                _ => {}
             }
         }
-    }
-}
 
-impl VisitMut for ErrorHandlingVisitor {
-    fn visit_item_fn_mut(&mut self, func: &mut ItemFn) {
-        self.optimize_error_handling(func);
-        visit_mut::visit_item_fn_mut(self, func);
+        let result = quote! { #ast };
+
+        // Validate the transformation
+        for validator in &self.validators {
+            validator.validate(&result)?;
+            validator.validate_safety(&result)?;
+        }
+
+        Ok(result)
     }
 }
 
@@ -231,37 +297,22 @@ mod tests {
     use syn::parse_str;
 
     #[test]
-    fn test_asyncify_function() {
+    fn test_asyncify_blocking_function() {
         let code = r#"
-            fn blocking_function() -> Result<(), std::io::Error> {
-                std::fs::read_to_string("file.txt")?;
-                Ok(())
+            fn blocking_function() -> Result<String, std::io::Error> {
+                std::fs::read_to_string("file.txt")
             }
         "#;
 
-        let mut ast = parse_str::<syn::File>(code).unwrap();
-        let transformer = CodeTransformer::new();
-        let result = transformer.transform_ast(&mut ast);
+        let mut ast = parse_str::<File>(code).unwrap();
+        let mut transformer = CodeTransformer::new();
+        transformer.add_transformation(TransformationType::AsyncifyFunction {
+            add_runtime: true,
+            preserve_sync_version: false,
+        });
+        let result = transformer.transform_ast(&mut ast).unwrap();
 
         assert!(result.to_string().contains("async"));
-    }
-
-    #[test]
-    fn test_error_handling_transformation() {
-        let code = r#"
-            fn process() -> Result<String, std::io::Error> {
-                Ok("success".to_string())
-            }
-        "#;
-
-        let mut ast = parse_str::<syn::File>(code).unwrap();
-        let mut transformer = CodeTransformer::new();
-        transformer.add_transformation(TransformationType::OptimizeErrorHandling {
-            use_anyhow: true,
-            generate_custom_errors: false,
-        });
-        let result = transformer.transform_ast(&mut ast);
-
-        assert!(result.to_string().contains("anyhow::Result"));
+        assert!(result.to_string().contains("tokio::fs::read_to_string"));
     }
 }

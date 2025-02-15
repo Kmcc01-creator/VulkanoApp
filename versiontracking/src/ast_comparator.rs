@@ -170,7 +170,7 @@ fn find_breaking_changes(old_data: AstData, new_data: AstData) -> ChangeTracker 
                 .items
                 .iter()
                 .filter_map(|item| {
-                    if let syn::TraitItem::Method(m) = item {
+                    if let syn::TraitItem::Fn(m) = item {
                         Some((m.sig.ident.to_string(), format!("{:?}", m.sig)))
                     } else {
                         None
@@ -182,7 +182,7 @@ fn find_breaking_changes(old_data: AstData, new_data: AstData) -> ChangeTracker 
                 .items
                 .iter()
                 .filter_map(|item| {
-                    if let syn::TraitItem::Method(m) = item {
+                    if let syn::TraitItem::Fn(m) = item {
                         Some((m.sig.ident.to_string(), format!("{:?}", m.sig)))
                     } else {
                         None
@@ -219,12 +219,12 @@ fn find_breaking_changes(old_data: AstData, new_data: AstData) -> ChangeTracker 
     // Compare implementations
     for (type_name, old_impls) in old_data.implementations {
         if let Some(new_impls) = new_data.implementations.get(&type_name) {
-            for new_impl in new_impls {
-                if let Some(trait_path) = &new_impl.trait_ {
+            for old_impl in &old_impls {
+                if let Some(trait_path) = &old_impl.trait_ {
                     let trait_name = format!("{:?}", trait_path.1);
 
-                    let found = old_impls.iter().any(|old_impl| {
-                        old_impl
+                    let found = new_impls.iter().any(|new_impl| {
+                        new_impl
                             .trait_
                             .as_ref()
                             .map_or(false, |t| format!("{:?}", t.1) == trait_name)
@@ -252,4 +252,31 @@ pub fn compare_asts(old_ast: &File, new_ast: &File) -> ChangeTracker {
     new_collector.visit_file(new_ast);
 
     find_breaking_changes(old_collector.data, new_collector.data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn test_function_signature_changes() {
+        let old_code = quote! {
+            fn test_fn(x: i32) -> String {
+                x.to_string()
+            }
+        };
+
+        let new_code = quote! {
+            fn test_fn(x: i64) -> String {
+                x.to_string()
+            }
+        };
+
+        let old_ast = parse_quote!(#old_code);
+        let new_ast = parse_quote!(#new_code);
+
+        let changes = compare_asts(&old_ast, &new_ast);
+        assert!(!changes.changes.is_empty());
+    }
 }

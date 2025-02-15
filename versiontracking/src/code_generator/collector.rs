@@ -2,8 +2,8 @@ use super::types::*;
 use quote::ToTokens;
 use std::collections::HashMap;
 use syn::{
-    punctuated::Punctuated, visit::Visit, Attribute, File, Ident, ImplItem, Item, ItemFn, ItemImpl,
-    ItemStruct, ItemTrait, Path, Token, TraitItem, Type,
+    visit::Visit, Attribute, File, ImplItem, ImplItemFn, Item, ItemFn, ItemImpl, ItemStruct,
+    ItemTrait, TraitItem, TraitItemFn, Type,
 };
 
 #[derive(Default)]
@@ -22,7 +22,8 @@ impl ModuleCollector {
     }
 
     fn is_doc_attribute(attr: &&Attribute) -> bool {
-        attr.path
+        attr.meta
+            .path()
             .segments
             .first()
             .map(|seg| seg.ident == "doc")
@@ -30,7 +31,8 @@ impl ModuleCollector {
     }
 
     fn is_derive_attribute(attr: &&Attribute) -> bool {
-        attr.path
+        attr.meta
+            .path()
             .segments
             .first()
             .map(|seg| seg.ident == "derive")
@@ -116,7 +118,7 @@ impl<'ast> Visit<'ast> for ModuleCollector {
     fn visit_item_trait(&mut self, item_trait: &'ast ItemTrait) {
         let mut methods = Vec::new();
         for item in &item_trait.items {
-            if let TraitItem::Method(method) = item {
+            if let TraitItem::Fn(method) = item {
                 methods.push(TraitMethodInfo {
                     name: method.sig.ident.to_string(),
                     signature: method.sig.to_token_stream().to_string(),
@@ -143,7 +145,7 @@ impl<'ast> Visit<'ast> for ModuleCollector {
     fn visit_item_impl(&mut self, item_impl: &'ast ItemImpl) {
         let mut methods = Vec::new();
         for item in &item_impl.items {
-            if let ImplItem::Method(method) = item {
+            if let ImplItem::Fn(method) = item {
                 methods.push(FunctionInfo {
                     name: method.sig.ident.to_string(),
                     signature: method.sig.to_token_stream().to_string(),

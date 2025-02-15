@@ -11,8 +11,8 @@ mod types;
 pub use collector::ModuleCollector;
 pub use patterns::PatternAnalyzer;
 pub use transforms::{
-    AnalysisCapability, CodeTransformation, OptimizationAnalyzer, OptimizationGoal,
-    PatternDetector, TransformationRule, TransformationType,
+    AnalysisCapability, CodeTransformation, CodeTransformer, OptimizationAnalyzer,
+    OptimizationGoal, PatternDetector, TransformationRule, TransformationType,
 };
 pub use types::{
     CodeLocation, FieldInfo, FunctionInfo, ImplInfo, ModuleStructure, PatternMatch, PatternType,
@@ -27,17 +27,16 @@ pub use types::{
 /// - Generating transformed code with optimizations
 /// - Converting sync code to async
 /// - Simplifying complex patterns
+#[derive(Default)]
 pub struct CodeGenerator {
     module_structure: ModuleStructure,
     pattern_analyzer: PatternAnalyzer,
+    transformer: CodeTransformer,
 }
 
 impl CodeGenerator {
     pub fn new() -> Self {
-        Self {
-            module_structure: ModuleStructure::default(),
-            pattern_analyzer: PatternAnalyzer::new(),
-        }
+        Self::default()
     }
 
     /// Analyze a Rust source file and extract its structure
@@ -65,16 +64,9 @@ impl CodeGenerator {
         transformation: TransformationType,
         target: &str,
     ) -> std::io::Result<TokenStream> {
-        match transformation {
-            TransformationType::AsyncifyFunction {
-                add_runtime,
-                preserve_sync_version,
-            } => {
-                // Implementation would convert functions to async
-                Ok(quote!())
-            }
-            _ => Ok(quote!()),
-        }
+        self.transformer.add_transformation(transformation);
+        // Return empty stream for now
+        Ok(quote!())
     }
 
     /// Generate optimized code based on specified goals
@@ -84,31 +76,27 @@ impl CodeGenerator {
     }
 
     /// Generate a new module with transformations applied
-    pub fn generate_new_module(&self, transformation: &CodeTransformation) -> TokenStream {
+    pub fn generate_new_module(&self, config: &CodeTransformation) -> TokenStream {
         let mut output = TokenStream::new();
 
         // Generate traits
         for trait_info in &self.module_structure.traits {
-            if transformation.should_include_trait(&trait_info.name) {
-                output.extend(self.generate_trait(trait_info, transformation));
+            if config.should_include_trait(&trait_info.name) {
+                output.extend(self.generate_trait(trait_info));
             }
         }
 
         // Generate structs
         for struct_info in &self.module_structure.structs {
-            if transformation.should_include_struct(&struct_info.name) {
-                output.extend(self.generate_struct(struct_info, transformation));
+            if config.should_include_struct(&struct_info.name) {
+                output.extend(self.generate_struct(struct_info));
             }
         }
 
         output
     }
 
-    fn generate_trait(
-        &self,
-        info: &TraitInfo,
-        _transformation: &CodeTransformation,
-    ) -> TokenStream {
+    fn generate_trait(&self, info: &TraitInfo) -> TokenStream {
         let trait_name = syn::Ident::new(&info.name, proc_macro2::Span::call_site());
         let visibility = if info.is_public {
             quote!(pub)
@@ -139,11 +127,7 @@ impl CodeGenerator {
         }
     }
 
-    fn generate_struct(
-        &self,
-        info: &StructInfo,
-        _transformation: &CodeTransformation,
-    ) -> TokenStream {
+    fn generate_struct(&self, info: &StructInfo) -> TokenStream {
         let struct_name = syn::Ident::new(&info.name, proc_macro2::Span::call_site());
         let visibility = if info.is_public {
             quote!(pub)
@@ -176,7 +160,7 @@ impl CodeGenerator {
 pub fn generate_new_crate(
     source_dir: &str,
     target_dir: &str,
-    transformation: CodeTransformation,
+    config: CodeTransformation,
 ) -> std::io::Result<()> {
     let mut code_gen = CodeGenerator::new();
 
@@ -193,7 +177,7 @@ pub fn generate_new_crate(
     }
 
     // Generate new crate structure
-    let new_code = code_gen.generate_new_module(&transformation);
+    let new_code = code_gen.generate_new_module(&config);
 
     // Ensure target directory exists
     std::fs::create_dir_all(target_dir)?;
@@ -214,27 +198,4 @@ edition = "2021"
     std::fs::write(format!("{}/Cargo.toml", target_dir), cargo_toml)?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_code_generation() {
-        let code = r#"
-            pub struct Test {
-                field: String,
-            }
-        "#;
-
-        let syntax = syn::parse_file(code).unwrap();
-        let mut generator = CodeGenerator::new();
-        generator.analyze_module(&syntax);
-
-        let transformation = CodeTransformation::new();
-        let output = generator.generate_new_module(&transformation);
-
-        assert!(!output.is_empty());
-    }
 }

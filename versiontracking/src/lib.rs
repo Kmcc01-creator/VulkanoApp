@@ -2,6 +2,7 @@ pub mod analysis;
 pub mod ast_comparator;
 pub mod ast_extractor;
 pub mod changes;
+pub mod code_generator;
 pub mod crates_io;
 pub mod version_management;
 
@@ -43,6 +44,9 @@ pub enum VersionError {
 
     #[error("Crate operation failed: {0}")]
     CrateError(#[from] crates_io::CrateError),
+
+    #[error("Code generation error: {0}")]
+    CodeGenError(String),
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -160,5 +164,16 @@ impl VersionTracker {
         let extract_path = crates_io::extract_crate(&crate_path)?;
 
         Ok((metadata, extract_path))
+    }
+
+    /// Generate a new crate from an existing one with transformations
+    pub fn generate_crate(
+        &self,
+        source_dir: &str,
+        target_dir: &str,
+        transformation: code_generator::CodeTransformation,
+    ) -> Result<(), VersionError> {
+        code_generator::generate_new_crate(source_dir, target_dir, transformation)
+            .map_err(|e| VersionError::CodeGenError(e.to_string()))
     }
 }

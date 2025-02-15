@@ -24,7 +24,6 @@
 
 - ✓ Archives breaking changes with timestamps
 - ✓ Generates human-readable reports
-- ✓ Supports JSON output format
 - ✓ Provides suggested fixes
 - ✓ Tracks historical changes
 
@@ -37,149 +36,56 @@
 - ✓ Extracts downloaded crate archives for analysis
 - ✓ Performs asynchronous HTTP requests
 - ✓ Implements intelligent caching with configurable directory
-- ✓ Handles API rate limiting gracefully
 
-### Error Handling
+### Code Generation and Transformation
 
-- ✓ Comprehensive error types for different failure scenarios
-- ✓ Metadata parsing errors
-- ✓ Cargo audit execution errors
-- ✓ HTTP request failures
-- ✓ Version parsing issues
-- ✓ AST analysis errors
-- ✓ Rate limit handling
-- ✓ Crate operation failures
+- ✓ AST-based code analysis
+- ✓ Project structure analysis
+- ✓ Code generation from templates
+- ✓ Selective item transformation
+- ✓ Cross-module dependency tracking
+- ✓ Documentation preservation
+- ✓ Implementation pattern detection
 
-## Implementation Status
+## Code Generation Features
 
-### Core Features
-
-- [x] Basic version checking
-- [x] Security vulnerability scanning
-- [x] Breaking change detection
-- [x] Crates.io integration
-- [x] Local caching system
-- [ ] Automated fix generation
-- [ ] Migration assistance
-- [ ] Plugin system
-
-### VS Code Integration
-
-- [x] Basic extension structure
-- [x] Command palette integration
-- [x] CodeLens for dependencies
-- [x] Hover provider for dependency info
-- [ ] Problems panel integration
-- [ ] Live AST analysis
-- [ ] Automated updates
-- [ ] Custom rule configuration
-
-## Planned Improvements
-
-### Crates.io Integration
-
-1. Enhanced Caching (High Priority)
-
-   - Implement intelligent cache invalidation
-   - Add cache size management
-   - Store preprocessed AST data
-   - Cache dependency recommendations
-
-2. Version Analysis (Medium Priority)
-
-   - Track breaking changes between versions
-   - Generate compatibility matrices
-   - Monitor security advisory history
-   - Analyze deprecation notices
-
-3. Smart Updates (Medium Priority)
-   - Consider transitive dependencies
-   - Calculate update risk scores
-   - Check for yanked versions
-   - Generate update impact reports
-
-### Workspace Management
-
-1. Enhanced Dependency Analysis
-
-   - Track shared dependencies across workspace
-   - Detect version conflicts
-   - Identify circular dependencies
-   - Monitor feature flag usage
-
-2. Build Configuration Analysis
-   - Parse build.rs files
-   - Track conditional compilation
-   - Analyze platform-specific code
-   - Monitor compiler flags
-
-### Code Analysis
-
-1. Advanced AST Analysis
-
-   - Track macro expansions
-   - Analyze type dependencies
-   - Monitor unsafe code usage
-   - Detect potential race conditions
-
-2. Automated Fixes
-   - Generate migration guides
-   - Provide automated fixes for common issues
-   - Support custom fix rules
-   - Track fix success rates
-
-## Extension Points
-
-### API Enhancement
-
-1. Custom Version Rules
+### Project Analysis
 
 ```rust
-pub trait VersionRule {
-    fn check_compatibility(&self, old_version: &str, new_version: &str) -> bool;
-    fn evaluate_risk(&self, version_change: &VersionChange) -> RiskLevel;
-}
+let tracker = VersionTracker::new(None)?;
+tracker.analyze_module("src/my_module")?;
 ```
 
-2. Custom Change Detectors
+### Code Transformation
 
 ```rust
-pub trait ChangeDetector {
-    fn detect_changes(&self, old_ast: &syn::File, new_ast: &syn::File) -> Vec<Change>;
-    fn suggest_fixes(&self, changes: &[Change]) -> Vec<Fix>;
-}
+let mut transformation = CodeTransformation::new();
+transformation.include_trait("MyTrait");
+transformation.include_struct("MyStruct");
+
+tracker.generate_crate(
+    "src/original",
+    "generated/new_version",
+    transformation
+)?;
 ```
 
-3. Report Customization
+### Supported Transformations
 
-```rust
-pub trait ReportGenerator {
-    fn generate_report(&self, changes: &[Change]) -> Report;
-    fn format_output(&self, report: &Report) -> String;
-}
-```
+- Trait definitions and implementations
+- Struct definitions and fields
+- Function signatures and bodies
+- Module structure and organization
+- Documentation and attributes
 
-### Integration Points
+### Analysis Capabilities
 
-1. Version Control Integration
-
-   - Git change tracking
-   - Branch analysis
-   - PR suggestions
-   - Commit message generation
-
-2. CI/CD Integration
-
-   - Automated checks
-   - Breaking change detection
-   - Security monitoring
-   - Report generation
-
-3. IDE Integration
-   - VS Code extension
-   - Real-time analysis
-   - Fix suggestions
-   - Custom rule configuration
+- Type dependency tracking
+- Implementation pattern detection
+- Cross-module references
+- Visibility analysis
+- Documentation coverage
+- Usage patterns
 
 ## Usage Examples
 
@@ -209,24 +115,101 @@ versiontracking analyze --recursive
 versiontracking analyze --manifest-path Cargo.toml --report-type full
 ```
 
+### Code Generation
+
+```bash
+# Generate new version of a module
+versiontracking generate --source src/module --target generated/module_v2
+
+# Analyze and transform specific items
+versiontracking generate --source src/module --target generated/module_v2 \
+    --include-trait MyTrait \
+    --include-struct MyStruct
+
+# Generate with pattern matching
+versiontracking generate --source src/module --target generated/module_v2 \
+    --pattern "Asset.*"
+```
+
+## Code Generation Architecture
+
+### Analysis Phase
+
+1. AST Parsing
+
+   - Full source code parsing
+   - Structure extraction
+   - Cross-reference building
+
+2. Dependency Analysis
+
+   - Type dependencies
+   - Implementation relationships
+   - Usage patterns
+
+3. Pattern Detection
+   - Common code structures
+   - Implementation patterns
+   - Architectural patterns
+
+### Generation Phase
+
+1. Template Application
+
+   - Structure preservation
+   - Documentation transfer
+   - Attribute handling
+
+2. Code Transformation
+
+   - Selective modification
+   - Pattern-based changes
+   - Compatibility preservation
+
+3. Output Generation
+   - Formatted code
+   - Documentation generation
+   - Cargo.toml creation
+
+## Integration Points
+
+### Development Workflow
+
+- Source control integration
+- CI/CD pipeline support
+- IDE integration (VS Code extension)
+
+### Analysis Tools
+
+- Cargo check integration
+- Clippy compatibility
+- Documentation tests
+
+### Customization
+
+- Custom transformation rules
+- Pattern matching rules
+- Output formatting
+
 ## Next Steps
 
-1. Immediate (1-2 weeks)
+### Immediate Tasks
 
-   - Implement cache management system
-   - Add VS Code Problems panel integration
-   - Improve breaking change detection accuracy
-   - Enhance report formatting
+- [ ] Enhance pattern detection
+- [ ] Add macro expansion support
+- [ ] Improve documentation generation
+- [ ] Add test generation
 
-2. Short Term (1-2 months)
+### Short Term
 
-   - Develop automated fix generation
-   - Add dependency graph visualization
-   - Implement custom rule system
-   - Create basic migration assistance
+- [ ] Implement workspace-wide transformations
+- [ ] Add dependency graph visualization
+- [ ] Create pattern library
+- [ ] Add automated fixes
 
-3. Long Term (3-6 months)
-   - Build community rule repository
-   - Create plugin system
-   - Add AI-assisted fixes
-   - Support multiple package managers
+### Long Term
+
+- [ ] Build pattern learning system
+- [ ] Add semantic analysis
+- [ ] Implement refactoring suggestions
+- [ ] Create plugin system

@@ -1,35 +1,140 @@
+[workspace]
+members = [
+    "crates/ast-analyzer",
+    "crates/code-generator",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+repository = "https://github.com/yourusername/versiontracking"
+documentation = "https://docs.rs/versiontracking"
+description = "Tools for analyzing and generating Rust code with version tracking"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+clap = { version = "4.0", features = ["derive"] }
+futures = "0.3"
+proc-macro2 = "1.0"
+quote = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+similar-asserts = "1.5"
+syn = { version = "2.0", features = ["full", "extra-traits", "visit"] }
+tempfile = "3.0"
+tokio = { version = "1.0", features = ["full"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
 [package]
 name = "versiontracking"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+description.workspace = true
+
+[features]
+default = ["sync"]
+sync = []
+async = ["tokio"]
+scripting = ["rhai"]
+full = ["sync", "async", "scripting"]
 
 [dependencies]
-cargo_metadata = "0.15"
-reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-semver = "1.0"
+# Workspace dependencies
+anyhow.workspace = true
+async-trait.workspace = true
+clap.workspace = true
+futures.workspace = true
+proc-macro2.workspace = true
+quote.workspace = true
+serde.workspace = true
+syn.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, optional = true }
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Local dependencies
+ast-analyzer = { path = "crates/ast-analyzer" }
+code-generator = { path = "crates/code-generator" }
+
+# Optional dependencies
+rhai = { version = "1.0", optional = true }
 thiserror = "1.0"
-dirs = "5.0"
-syn = { version = "2.0", features = ["full", "extra-traits", "visit", "visit-mut", "parsing", "printing"] }
-quote = "1.0"
-proc-macro2 = "1.0"
-toml = "0.7"
-anyhow = "1.0"
-rayon = "1.7"
-chrono = { version = "0.4", features = ["serde"] }
-walkdir = "2.3"
-owo-colors = "3.5"
-dialoguer = "0.10"
-tar = "0.4"
-flate2 = "1.0"
-indexmap = "1.9"
 
-[lib]
-name = "versiontracking"
-path = "src/lib.rs"
+[dev-dependencies]
+criterion = { version = "0.5", features = ["async_tokio"] }
+similar-asserts.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
 
-[[bin]]
-name = "versiontracking"
-path = "src/bin/versiontracking.rs"
+[[bench]]
+name = "benchmarks"
+harness = false
+required-features = ["full"]
+
+[[example]]
+name = "complete_workflow"
+required-features = ["full"]
+
+[[example]]
+name = "basic_analysis"
+required-features = ["sync"]
+
+[[example]]
+name = "async_generation"
+required-features = ["async"]
+
+[[example]]
+name = "scripting_example"
+required-features = ["scripting"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[profile.dev]
+opt-level = 0
+debug = true
+lto = false
+incremental = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 1
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = true
+incremental = false
+codegen-units = 1
+
+[profile.test]
+opt-level = 0
+debug = true
+lto = false
+incremental = true
+
+# Lints
+[lints.rust]
+unsafe_code = "warn"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+clone_on_copy = "warn"
+redundant_closure = "warn"
+option_if_let_else = "warn"

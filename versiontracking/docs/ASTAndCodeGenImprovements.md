@@ -28,6 +28,7 @@
   - Attribute modifications
   - Default value changes
   - Associated type modifications
+  - Enum variant changes
 
 #### Comparison Logic
 
@@ -107,6 +108,19 @@ impl AstAnalyzer {
     fn analyze_generic_params(&self, old: &Generics, new: &Generics) -> Vec<ExtendedBreakingChange>;
     fn analyze_trait_bounds(&self, old: &WhereClause, new: &WhereClause) -> Vec<ExtendedBreakingChange>;
     fn analyze_associated_types(&self, old: &ItemTrait, new: &ItemTrait) -> Vec<ExtendedBreakingChange>;
+    fn analyze_enum_variants(&self, old: &ItemEnum, new: &ItemEnum) -> Vec<ExtendedBreakingChange>;
+}
+```
+
+```rust
+// Example for enum variant analysis
+pub enum ExtendedBreakingChange {
+    // Existing variants...
+    EnumVariantChanged {
+        enum_name: String,
+        old_variants: String,
+        new_variants: String,
+    },
 }
 ```
 
@@ -151,6 +165,7 @@ impl TransformationError {
 2. Implement proper validation for transformations
 3. Add semantic analysis for type comparisons
 4. Enhance breaking change detection
+5. Complete enum variant change detection
 
 ### Medium Priority
 
@@ -188,6 +203,7 @@ impl TransformationError {
 - Include integration tests
 - Test edge cases extensively
 - Verify semantic equivalence
+- Use property-based testing to generate a wide range of inputs for testing transformations.
 
 4. **Documentation**
 

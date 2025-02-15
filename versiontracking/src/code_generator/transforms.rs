@@ -1,15 +1,14 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use syn::{
-    parse::{Parse, ParseStream},
-    parse_quote,
-    visit_mut::VisitMut,
-    Block, Error, File, FnArg, Ident, Item, ItemFn, ReturnType, Type,
+    parse_quote, spanned::Spanned, visit_mut::VisitMut, Block, Error, Expr, File, FnArg, Ident,
+    Item, ItemFn, ReturnType, Type,
 };
 
-use crate::code_generator::types::{PatternMatch, PatternType, Suggestion};
+use super::patterns::{Pattern, PatternAnalyzer, PatternType};
 
+// Core types and traits first
 #[derive(Debug, Clone)]
 pub enum TransformationType {
     AsyncifyFunction {
@@ -34,6 +33,16 @@ pub enum TransformationType {
     },
 }
 
+pub trait TransformationValidator {
+    fn validate(&self, result: &TokenStream) -> Result<(), Error>;
+    fn validate_safety(&self, result: &TokenStream) -> Result<(), Error>;
+    fn validate_performance(
+        &self,
+        original: &TokenStream,
+        result: &TokenStream,
+    ) -> Result<(), Error>;
+}
+
 #[derive(Debug, Clone)]
 pub struct BlockingOperation {
     pub name: String,
@@ -42,6 +51,7 @@ pub struct BlockingOperation {
     pub runtime_required: bool,
 }
 
+// Implementation of BlockingOperation
 impl BlockingOperation {
     fn new(name: &str, span: Span) -> Self {
         let async_alternative = match name {
@@ -62,53 +72,39 @@ impl BlockingOperation {
     }
 }
 
-pub trait TransformationValidator {
-    fn validate(&self, result: &TokenStream) -> Result<(), Error>;
-    fn validate_safety(&self, result: &TokenStream) -> Result<(), Error>;
-    fn validate_performance(
-        &self,
-        original: &TokenStream,
-        result: &TokenStream,
-    ) -> Result<(), Error>;
-}
-
+// Validator implementation
 pub struct AsyncTransformValidator {
-    required_features: HashSet<String>,
+    required_features: Vec<&'static str>,
 }
 
 impl AsyncTransformValidator {
     pub fn new() -> Self {
-        let mut features = HashSet::new();
-        features.insert("tokio/fs".to_string());
-        features.insert("tokio/time".to_string());
-        features.insert("tokio/net".to_string());
         Self {
-            required_features: features,
+            required_features: vec!["tokio/fs", "tokio/time", "tokio/net"],
         }
     }
 }
 
 impl TransformationValidator for AsyncTransformValidator {
-    fn validate(&self, result: &TokenStream) -> Result<(), Error> {
-        // TODO: Implement validation of async transformation
+    fn validate(&self, _result: &TokenStream) -> Result<(), Error> {
+        // TODO: Implement proper validation
         Ok(())
     }
 
-    fn validate_safety(&self, result: &TokenStream) -> Result<(), Error> {
-        // Ensure no unsafe blocks in async context
+    fn validate_safety(&self, _result: &TokenStream) -> Result<(), Error> {
         Ok(())
     }
 
     fn validate_performance(
         &self,
-        original: &TokenStream,
-        result: &TokenStream,
+        _original: &TokenStream,
+        _result: &TokenStream,
     ) -> Result<(), Error> {
-        // Compare complexity of async vs sync version
         Ok(())
     }
 }
 
+// Analysis components
 struct BlockingCallAnalyzer {
     blocking_ops: Vec<BlockingOperation>,
 }
@@ -138,7 +134,8 @@ impl BlockingCallAnalyzer {
                         .collect::<Vec<_>>()
                         .join("::");
 
-                    self.ops.push(BlockingOperation::new(&name, call.span()));
+                    self.ops
+                        .push(BlockingOperation::new(&name, call.func.span()));
                 }
                 syn::visit::visit_expr_call(self, call);
             }
@@ -147,7 +144,7 @@ impl BlockingCallAnalyzer {
                 let method_name = call.method.to_string();
                 if method_name.starts_with("blocking_") {
                     self.ops
-                        .push(BlockingOperation::new(&method_name, call.span()));
+                        .push(BlockingOperation::new(&method_name, call.method.span()));
                 }
                 syn::visit::visit_expr_method_call(self, call);
             }
@@ -160,6 +157,7 @@ impl BlockingCallAnalyzer {
     }
 }
 
+// Transformation components
 struct AsyncifyVisitor {
     add_runtime: bool,
     preserve_sync: bool,
@@ -198,27 +196,8 @@ impl AsyncifyVisitor {
     }
 
     fn wrap_blocking_calls(&self, block: &mut Block, ops: &[BlockingOperation]) {
-        struct AsyncWrapper;
-
-        impl AsyncWrapper {
-            fn wrap_operation(op: &BlockingOperation) -> TokenStream {
-                if let Some(async_alt) = &op.async_alternative {
-                    // Replace blocking call with async alternative
-                    quote! {
-                        #async_alt.await
-                    }
-                } else {
-                    // Wrap in spawn_blocking if no async alternative
-                    quote! {
-                        tokio::task::spawn_blocking(move || {
-                            // Original blocking call
-                        }).await.unwrap()
-                    }
-                }
-            }
-        }
-
-        // TODO: Implement block transformation using AsyncWrapper
+        let mut transformer = AsyncCallTransformer::new(ops);
+        transformer.visit_block_mut(block);
     }
 }
 
@@ -236,9 +215,47 @@ impl VisitMut for AsyncifyVisitor {
     }
 }
 
+struct AsyncCallTransformer {
+    ops: Vec<BlockingOperation>,
+}
+
+impl AsyncCallTransformer {
+    fn new(ops: &[BlockingOperation]) -> Self {
+        Self { ops: ops.to_vec() }
+    }
+}
+
+impl VisitMut for AsyncCallTransformer {
+    fn visit_expr_call_mut(&mut self, call: &mut syn::ExprCall) {
+        if let syn::Expr::Path(path) = &*call.func {
+            let name = path
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+
+            if let Some(op) = self.ops.iter().find(|op| op.name == name) {
+                if let Some(ref async_alt) = op.async_alternative {
+                    let new_path: syn::Path = syn::parse_str(async_alt).unwrap();
+                    call.func = Box::new(Expr::Path(syn::ExprPath {
+                        attrs: vec![],
+                        qself: None,
+                        path: new_path,
+                    }));
+                }
+            }
+        }
+        syn::visit_mut::visit_expr_call_mut(self, call);
+    }
+}
+
+// Main transformer
 pub struct CodeTransformer {
     transformations: Vec<TransformationType>,
     validators: Vec<Box<dyn TransformationValidator>>,
+    pattern_analyzer: PatternAnalyzer,
 }
 
 impl Default for CodeTransformer {
@@ -246,6 +263,7 @@ impl Default for CodeTransformer {
         Self {
             transformations: Vec::new(),
             validators: vec![Box::new(AsyncTransformValidator::new())],
+            pattern_analyzer: PatternAnalyzer::new(),
         }
     }
 }
@@ -259,35 +277,60 @@ impl CodeTransformer {
         self.transformations.push(transformation);
     }
 
-    pub fn transform_ast(&self, ast: &mut File) -> Result<TokenStream, Error> {
+    pub fn transform_ast(&mut self, ast: &File) -> Result<TokenStream, Error> {
+        let mut transformed_ast = ast.clone();
+        let patterns = self.pattern_analyzer.analyze_file(&transformed_ast);
+        let mut needs_runtime = false;
+
         for transformation in &self.transformations {
             match transformation {
                 TransformationType::AsyncifyFunction {
                     add_runtime,
                     preserve_sync_version,
                 } => {
+                    if *add_runtime {
+                        needs_runtime = true;
+                    }
                     let mut visitor = AsyncifyVisitor::new(*add_runtime, *preserve_sync_version);
-                    syn::visit_mut::visit_file_mut(&mut visitor, ast);
+                    visitor.visit_file_mut(&mut transformed_ast);
                 }
                 TransformationType::OptimizeErrorHandling {
                     use_anyhow,
                     generate_custom_errors,
                 } => {
-                    // TODO: Implement error handling optimization
+                    let config = super::error_handling::ErrorHandlingConfig {
+                        use_anyhow: *use_anyhow,
+                        generate_custom_errors: *generate_custom_errors,
+                        custom_error_name: None,
+                        add_error_context: true,
+                    };
+                    let mut error_transformer =
+                        super::error_handling::ErrorTransformer::new(config);
+                    for item in &mut transformed_ast.items {
+                        error_transformer.transform_item(item)?;
+                    }
                 }
                 _ => {}
             }
         }
 
-        let result = quote! { #ast };
+        let result = quote! { #transformed_ast };
 
-        // Validate the transformation
         for validator in &self.validators {
             validator.validate(&result)?;
             validator.validate_safety(&result)?;
         }
 
         Ok(result)
+    }
+
+    pub fn get_patterns(&mut self) -> Vec<Pattern> {
+        let empty_file = syn::parse_str("").unwrap();
+        self.pattern_analyzer.analyze_file(&empty_file)
+    }
+
+    pub fn analyze_file(&mut self, ast: &File) -> Vec<Pattern> {
+        self.pattern_analyzer.analyze_file(ast)
     }
 }
 
@@ -300,19 +343,42 @@ mod tests {
     fn test_asyncify_blocking_function() {
         let code = r#"
             fn blocking_function() -> Result<String, std::io::Error> {
-                std::fs::read_to_string("file.txt")
+                std::fs::read_to_string("test.txt")
             }
         "#;
 
-        let mut ast = parse_str::<File>(code).unwrap();
         let mut transformer = CodeTransformer::new();
         transformer.add_transformation(TransformationType::AsyncifyFunction {
             add_runtime: true,
             preserve_sync_version: false,
         });
-        let result = transformer.transform_ast(&mut ast).unwrap();
+
+        let ast = parse_str::<File>(code).unwrap();
+        let result = transformer.transform_ast(&ast).unwrap();
 
         assert!(result.to_string().contains("async"));
         assert!(result.to_string().contains("tokio::fs::read_to_string"));
+    }
+
+    #[test]
+    fn test_pattern_detection() {
+        let code = r#"
+            fn blocking_with_unsafe() {
+                unsafe {
+                    std::fs::read_to_string("test.txt").unwrap();
+                }
+            }
+        "#;
+
+        let mut transformer = CodeTransformer::new();
+        let ast = parse_str::<File>(code).unwrap();
+        let patterns = transformer.analyze_file(&ast);
+
+        assert!(patterns
+            .iter()
+            .any(|p| matches!(p.pattern_type, PatternType::BlockingCall)));
+        assert!(patterns
+            .iter()
+            .any(|p| matches!(p.pattern_type, PatternType::UnsafeUsage)));
     }
 }

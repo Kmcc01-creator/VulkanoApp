@@ -1,0 +1,154 @@
+// Example scripts demonstrating common use cases
+
+// 1. Generate a struct with builder pattern
+generate MyConfig struct {
+    field name: String
+    field age: u32
+    field active: bool
+    async = "false"
+    visibility = "pub"
+}
+
+apply_pattern builder MyConfig {
+    validation = "true"
+    doc = "true"
+}
+
+// 2. Convert blocking code to async
+analyze src/lib.rs {
+    detect blocking_io
+    detect unsafe_blocks
+    check_safety = true
+}
+
+apply_pattern async_wrapper {
+    target = "blocking_functions"
+    error_handling = "true"
+}
+
+// 3. Add resource management
+generate Resource struct {
+    field handle: RawHandle
+    field state: String
+}
+
+apply_pattern resource_guard Resource {
+    cleanup = "true"
+    error_handling = "true"
+}
+
+// 4. Configure analysis settings
+configure analysis {
+    check_safety = "true"
+    detect_patterns = "true"
+    async_aware = "true"
+}
+
+// 5. Generate an API client
+generate ApiClient struct {
+    field base_url: String
+    field timeout: Duration
+}
+
+apply_pattern rest_client ApiClient {
+    async = "true"
+    error_handling = "true"
+    retry = "true"
+}
+
+// 6. Create a type-safe configuration
+generate Config struct {
+    field database_url: String
+    field max_connections: u32
+    field timeout_ms: u64
+}
+
+apply_pattern serde Config {
+    derive = "Deserialize, Serialize"
+    rename = "snake_case"
+}
+
+// 7. Generate an event system
+generate Event enum {
+    variant Connected { client_id: String }
+    variant Disconnected { client_id: String }
+    variant Message { client_id: String, content: String }
+}
+
+apply_pattern event_handling Event {
+    async = "true"
+    logging = "true"
+}
+
+// 8. Add metrics collection
+generate Metrics struct {
+    field requests: AtomicU64
+    field errors: AtomicU64
+    field latency: Histogram
+}
+
+apply_pattern metrics Metrics {
+    prometheus = "true"
+    labels = ["endpoint", "status"]
+}
+
+// 9. Generate a state machine
+generate ConnectionState enum {
+    variant Disconnected
+    variant Connecting { attempt: u32 }
+    variant Connected { since: DateTime<Utc> }
+    variant Error { message: String }
+}
+
+apply_pattern state_machine ConnectionState {
+    async = "true"
+    transitions = "true"
+    visualization = "true"
+}
+
+// 10. Create a thread-safe cache
+generate Cache struct {
+    field storage: HashMap<String, Vec<u8>>
+    field max_size: usize
+}
+
+apply_pattern thread_safe Cache {
+    sync = "RwLock"
+    metrics = "true"
+}
+
+// Run analysis on generated code
+analyze generated/ {
+    detect thread_safety
+    detect resource_leaks
+    detect performance_issues
+}
+
+// Configure documentation
+configure documentation {
+    style = "full"
+    examples = "true"
+    diagrams = "true"
+}
+
+// Configure transformations
+configure transforms {
+    optimization = "size"
+    safety_checks = "true"
+    error_handling = "true"
+}
+
+// Generate tests
+generate tests {
+    target = "all"
+    coverage = "true"
+    async = "true"
+    fuzzing = "true"
+}
+
+// Final safety check
+analyze src/ {
+    detect all
+    strict = "true"
+    report = "full"
+}

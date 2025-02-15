@@ -119,6 +119,7 @@ Dependencies are visualized using:
 - CodeLens annotations
 - Hover information
 - Status bar updates
+- Highlighting of outdated dependencies in `Cargo.toml` files
 
 ### 3. Update Management
 
@@ -166,6 +167,17 @@ export async function activate(context: vscode.ExtensionContext) {
   const codeLensProvider = registerCodeLensProvider();
   const hoverProvider = registerHoverProvider();
 
+  // Example: Create a Tree View
+  vscode.window.createTreeView("versionTracking.dependencies", {
+    treeDataProvider: treeProvider,
+  });
+
+  // Example: Register a CodeLens Provider
+  vscode.languages.registerCodeLensProvider(
+    { scheme: "file", language: "toml", pattern: "**/Cargo.toml" },
+    codeLensProvider
+  );
+
   // Set up command system
   const commandManager = new CommandManager(/*...*/);
 }
@@ -179,6 +191,7 @@ The extension implements comprehensive error handling:
 - User-friendly error messages
 - Detailed logging
 - Retry mechanisms
+- Display errors in the Problems panel
 
 ## Performance Considerations
 
@@ -205,6 +218,8 @@ The extension implements comprehensive error handling:
    - [ ] Add graph visualization
    - [ ] Implement workspace-wide analysis
    - [ ] Add custom rule support
+   - [ ] Support for other package managers (e.g., npm, pip)
+   - [ ] Integration with other development tools (e.g., GitHub, GitLab)
 
 ## Testing Strategy
 

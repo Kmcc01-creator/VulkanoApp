@@ -36,6 +36,7 @@
 - ✓ Extracts downloaded crate archives for analysis
 - ✓ Performs asynchronous HTTP requests
 - ✓ Implements intelligent caching with configurable directory
+- ✓ Checks for yanked crates
 
 ### Code Generation and Transformation
 
@@ -113,6 +114,9 @@ versiontracking analyze --recursive
 
 # Generate detailed report
 versiontracking analyze --manifest-path Cargo.toml --report-type full
+
+# Generate report for a specific crate and version range
+versiontracking analyze --crate-name my_crate --old-version 1.0.0 --new-version 1.2.0
 ```
 
 ### Code Generation
@@ -141,13 +145,15 @@ versiontracking generate --source src/module --target generated/module_v2 \
    - Structure extraction
    - Cross-reference building
 
-2. Dependency Analysis
+2. Error and warning detection (using cargo check or similar)
+
+3. Dependency Analysis
 
    - Type dependencies
    - Implementation relationships
    - Usage patterns
 
-3. Pattern Detection
+4. Pattern Detection
    - Common code structures
    - Implementation patterns
    - Architectural patterns
@@ -199,6 +205,7 @@ versiontracking generate --source src/module --target generated/module_v2 \
 - [ ] Add macro expansion support
 - [ ] Improve documentation generation
 - [ ] Add test generation
+- [ ] Improve handling of edge cases in AST analysis
 
 ### Short Term
 

@@ -16,6 +16,38 @@ async fn read_file(path: &str) -> Result<String, std::io::Error> {
 }
 ```
 
+### 4. Refactoring for Readability
+
+```rust
+// Original code with complex expression
+fn calculate_something(a: i32, b: i32, c: i32) -> i32 {
+    (a * b + c) / (a - b) + (a + b + c) * 2
+}
+
+// Transformed code with extracted variable
+fn calculate_something(a: i32, b: i32, c: i32) -> i32 {
+    let first_part = (a * b + c) / (a - b);
+    let second_part = (a + b + c) * 2;
+    first_part + second_part
+}
+```
+
+#### Implementation Pattern
+
+```rust
+impl ReadabilityTransformer {
+    fn refactor_for_readability(&self, func: &mut ItemFn) {
+        // 1. Identify complex expressions
+        let complex_expressions = self.find_complex_expressions(&func.block);
+
+        // 2. Extract expressions into well-named variables
+        for expr in complex_expressions {
+            self.extract_into_variable(expr);
+        }
+    }
+}
+```
+
 #### Implementation Pattern
 
 ```rust
@@ -166,6 +198,16 @@ impl PatternDetector {
         patterns
     }
 
+     fn detect_redundant_code(&self, ast: &File) -> Vec<Pattern> {
+        let mut patterns = Vec::new();
+
+        // Check for unused variables
+        // Check for unused imports
+        // Check for duplicated code blocks
+
+        patterns
+     }
+
     fn detect_error_patterns(&self, ast: &File) -> Vec<Pattern> {
         let mut patterns = Vec::new();
 
@@ -255,6 +297,7 @@ impl TransformationValidator {
    - Consider performance implications
    - Look for safety violations
    - Check for idiomatic code
+   - Provide clear explanations for detected patterns and suggested transformations.
 
 2. **Code Generation**
 

@@ -10,19 +10,59 @@ vulkano/
 winit/
 glam-rs/
 
+# Node.js dependencies and build artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# TypeScript/JavaScript ignores
+**/*.js
+**/*.js.map
+**/*.d.ts
+!vscode-extension/src/**/*.ts    # Track TypeScript source files
+!vscode-extension/src/**/*.d.ts  # Track TypeScript declaration files
+!vscode-extension/package.json   # Track package.json
+!jest.config.js                  # Track test config if needed
+**/dist/
+**/out/
+**/lib/
+.tsbuildinfo
+
 # IDE and editor files
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo
-*.ts
-*.json
-*.js
 
 # System files
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables and secrets
 .env
 .env.*
+*.pem
+.secret*
+
+# Logs and diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Optional caches
+.eslintcache
+.prettiercache
+.cache/

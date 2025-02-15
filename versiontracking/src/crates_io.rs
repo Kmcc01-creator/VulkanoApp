@@ -8,25 +8,51 @@ use tokio::io::AsyncWriteExt;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CrateMetadata {
     pub name: String,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
     pub downloads: u64,
+    #[serde(default)]
     pub recent_downloads: Option<u64>,
+    #[serde(default)]
     pub categories: Vec<String>,
+    #[serde(default)]
     pub keywords: Vec<String>,
     #[serde(default)]
     pub versions: Vec<String>,
+    #[serde(default)]
     pub documentation: Option<String>,
+    #[serde(default)]
     pub repository: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ApiResponse {
-    crates: Vec<CrateMetadata>,
-    meta: ResponseMeta,
+struct SearchResponse {
+    crates: Vec<CrateInfo>,
+    meta: SearchMeta,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ResponseMeta {
+struct CrateInfo {
+    name: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    downloads: u64,
+    #[serde(default)]
+    recent_downloads: Option<u64>,
+    #[serde(default)]
+    max_version: Option<String>,
+    #[serde(default)]
+    documentation: Option<String>,
+    #[serde(default)]
+    repository: Option<String>,
+    #[serde(default)]
+    exact_match: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SearchMeta {
     total: u64,
 }
 
@@ -50,8 +76,11 @@ pub enum CrateError {
     #[error("Failed to download crate: {0}")]
     DownloadError(String),
 
-    #[error("JSON parsing error: {0}")]
+    #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
+
+    #[error("API error: {0}")]
+    ApiError(String),
 }
 
 pub struct CratesIoClient {
@@ -77,12 +106,17 @@ impl CratesIoClient {
         query: &str,
         categories: &[&str],
     ) -> Result<SearchResults, CrateError> {
-        let mut url = format!("https://crates.io/api/v1/crates?q={}&per_page=10", query);
+        let mut url = format!(
+            "https://crates.io/api/v1/crates?q={}&page=1&per_page=10&sort=downloads",
+            query
+        );
 
         if !categories.is_empty() {
             url.push_str("&categories=");
             url.push_str(&categories.join(","));
         }
+
+        println!("Requesting URL: {}", url);
 
         let response = self.client.get(&url).send().await?;
 
@@ -90,11 +124,34 @@ impl CratesIoClient {
             return Err(CrateError::RateLimitExceeded);
         }
 
-        let api_response: ApiResponse = response.json().await?;
+        if !response.status().is_success() {
+            return Err(CrateError::ApiError(format!(
+                "API request failed with status: {}",
+                response.status()
+            )));
+        }
+
+        let search_response: SearchResponse = response.json().await?;
+
+        let crates = search_response
+            .crates
+            .into_iter()
+            .map(|c| CrateMetadata {
+                name: c.name,
+                description: c.description,
+                downloads: c.downloads,
+                recent_downloads: c.recent_downloads,
+                categories: Vec::new(), // We'll need to fetch this separately if needed
+                keywords: Vec::new(),   // Same here
+                versions: vec![c.max_version.unwrap_or_default()],
+                documentation: c.documentation,
+                repository: c.repository,
+            })
+            .collect();
 
         Ok(SearchResults {
-            total: api_response.meta.total,
-            crates: api_response.crates,
+            total: search_response.meta.total,
+            crates,
         })
     }
 
@@ -133,12 +190,21 @@ impl CratesIoClient {
             return Err(CrateError::RateLimitExceeded);
         }
 
-        let json: serde_json::Value = response.json().await?;
-        let crate_data = json
-            .get("crate")
-            .ok_or_else(|| CrateError::DownloadError("Invalid response format".to_string()))?;
+        if !response.status().is_success() {
+            return Err(CrateError::ApiError(format!(
+                "API request failed with status: {}",
+                response.status()
+            )));
+        }
 
-        serde_json::from_value(crate_data.clone()).map_err(CrateError::JsonError)
+        #[derive(Deserialize)]
+        struct CrateResponse {
+            #[serde(rename = "crate")]
+            info: CrateMetadata,
+        }
+
+        let crate_response: CrateResponse = response.json().await?;
+        Ok(crate_response.info)
     }
 
     /// Find similar crates based on categories and keywords

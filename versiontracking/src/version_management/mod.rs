@@ -8,10 +8,10 @@ use std::process::Command;
 
 pub async fn check_versions(
     manifest_path: Option<String>,
-    json_output: bool,
+    _json_output: bool, // Added underscore to silence the warning
     recursive: bool,
     search_path: String,
-) -> Result<(), VersionError> {
+) -> Result<Vec<(PathBuf, Report)>, VersionError> {
     let manifest_paths = if let Some(path) = manifest_path {
         vec![PathBuf::from(path)]
     } else if recursive {
@@ -27,10 +27,7 @@ pub async fn check_versions(
         println!("Analyzing {}", manifest_path.display().bold());
 
         let metadata = get_metadata(manifest_path.to_str().unwrap())?;
-        let mut report = Report {
-            dependencies: Vec::new(),
-            audit_output: String::new(),
-        };
+        let mut report = Report::new();
 
         let client = Client::builder()
             .user_agent("cargo-versioncheck/0.1.0")
@@ -56,21 +53,10 @@ pub async fn check_versions(
 
         report.dependencies.sort_by(|a, b| a.name.cmp(&b.name));
         report.audit_output = run_cargo_audit()?;
-        all_reports.push((manifest_path, report));
+        all_reports.push((manifest_path.clone(), report));
     }
 
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&all_reports)?);
-    } else {
-        for (path, report) in all_reports {
-            println!("\n{}", "=".repeat(50));
-            println!("Results for: {}", path.display().bold());
-            println!("{}", "=".repeat(50));
-            output_report(&report, false)?;
-        }
-    }
-
-    Ok(())
+    Ok(all_reports)
 }
 
 pub async fn analyze_dependencies(
@@ -297,7 +283,7 @@ pub fn get_metadata(manifest_path: &str) -> Result<cargo_metadata::Metadata, Ver
     Ok(MetadataCommand::new().manifest_path(manifest_path).exec()?)
 }
 
-pub async fn get_dependency_info(
+async fn get_dependency_info(
     package: &cargo_metadata::Package,
     client: &Client,
 ) -> Option<DependencyInfo> {
@@ -374,55 +360,4 @@ pub fn run_cargo_audit() -> Result<String, VersionError> {
     }
 
     Ok(audit_output)
-}
-
-pub fn output_report(report: &Report, json_output: bool) -> Result<(), VersionError> {
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(report)?);
-    } else {
-        let (updates, current) = report.partition_dependencies();
-
-        if !updates.is_empty() {
-            println!("\n{}", "Updates Available:".yellow().bold());
-            println!("{}", "=================".yellow());
-            for dep in &updates {
-                println!(
-                    "{}: {} → {}",
-                    dep.name.blue().bold(),
-                    dep.current_version,
-                    dep.latest_version
-                        .as_deref()
-                        .unwrap_or("unknown")
-                        .yellow()
-                        .bold()
-                );
-            }
-        }
-
-        if !current.is_empty() {
-            println!("\n{}", "Up to Date:".green().bold());
-            println!("{}", "==========".green());
-            for dep in &current {
-                println!("{}: {}", dep.name.blue().bold(), dep.current_version);
-            }
-        }
-
-        println!("\n{}", "Summary:".bold());
-        println!(
-            "Total dependencies: {}",
-            report.dependencies.len().to_string().bold()
-        );
-        println!(
-            "Updates available: {}",
-            updates.len().to_string().yellow().bold()
-        );
-        println!("Up to date: {}", current.len().to_string().green().bold());
-
-        if !report.audit_output.is_empty() {
-            println!("\n{}", "Security Audit Results:".red().bold());
-            println!("{}", "=====================".red());
-            println!("{}", report.audit_output);
-        }
-    }
-    Ok(())
 }

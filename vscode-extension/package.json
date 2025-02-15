@@ -1,0 +1,142 @@
+{
+  "name": "versiontracking",
+  "displayName": "Version Tracking",
+  "description": "Manage and track Rust dependencies with advanced version analysis",
+  "version": "0.1.0",
+  "publisher": "versiontracking",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:toml",
+    "workspaceContains:**/Cargo.toml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "versionTracking.checkDependencies",
+        "title": "Check Dependencies",
+        "category": "Version Tracking"
+      },
+      {
+        "command": "versionTracking.updateDependency",
+        "title": "Update Dependency",
+        "category": "Version Tracking"
+      },
+      {
+        "command": "versionTracking.updateAllDependencies",
+        "title": "Update All Dependencies",
+        "category": "Version Tracking"
+      },
+      {
+        "command": "versionTracking.showDependencyDetails",
+        "title": "Show Dependency Details",
+        "category": "Version Tracking"
+      },
+      {
+        "command": "versionTracking.showVulnerabilities",
+        "title": "Show Vulnerabilities",
+        "category": "Version Tracking"
+      },
+      {
+        "command": "versionTracking.refreshDependencies",
+        "title": "Refresh Dependencies",
+        "category": "Version Tracking",
+        "icon": "$(refresh)"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "versionTracking.dependenciesView",
+          "name": "Dependencies"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "versionTracking.refreshDependencies",
+          "when": "view == versionTracking.dependenciesView",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "versionTracking.updateDependency",
+          "when": "view == versionTracking.dependenciesView && viewItem =~ /hasUpdate/",
+          "group": "inline"
+        },
+        {
+          "command": "versionTracking.showVulnerabilities",
+          "when": "view == versionTracking.dependenciesView && viewItem =~ /hasVulnerabilities/",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Version Tracking",
+      "properties": {
+        "versionTracking.executablePath": {
+          "type": "string",
+          "default": "versiontracking",
+          "description": "Path to the versiontracking executable"
+        },
+        "versionTracking.cacheDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Directory to store cached data"
+        },
+        "versionTracking.enabledFeatures": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "autoCheck",
+              "notifications",
+              "codeLens",
+              "hover",
+              "diagnostics"
+            ]
+          },
+          "default": [
+            "autoCheck",
+            "notifications",
+            "codeLens",
+            "hover"
+          ],
+          "description": "Enabled feature flags"
+        },
+        "versionTracking.autoCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically check dependencies when Cargo.toml changes"
+        },
+        "versionTracking.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for updates and vulnerabilities"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.7",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.42.0",
+    "@typescript-eslint/parser": "^5.42.0",
+    "eslint": "^8.26.0",
+    "typescript": "^4.8.4"
+  },
+  "dependencies": {}
+}

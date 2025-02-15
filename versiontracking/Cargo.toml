@@ -1,0 +1,19 @@
+[package]
+name = "versiontracking"
+version = "0.1.0"
+authors = ["Your Name <you@example.com>"]
+edition = "2021"
+
+[dependencies]
+cargo_metadata = "0.18"       # For getting the dependency graph
+cargo_toml = "0.21.0"        # For parsing Cargo.toml files
+semver = "1.0"               # For version comparisons
+reqwest = { version = "0.11", features = ["json", "tokio-native-tls"] }  # For fetching crate info
+serde = { version = "1.0", features = ["derive"] }  # For JSON output
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }  # Async runtime
+thiserror = "1.0"           # Better error handling
+clap = { version = "4.0", features = ["derive"] } # Command line argument parsing
+walkdir = "2.5"             # For recursive directory traversal
+dialoguer = "0.11"          # For interactive CLI prompts
+owo-colors = "3.5.0"        # For colorized terminal output

@@ -1,9 +1,17 @@
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline};
+use vulkano::pipeline::{
+    graphics::{
+        input_assembly::InputAssemblyState, vertex_input::Vertex as VulkanoVertex,
+        vertex_input::VertexInputState, viewport::Viewport, viewport::ViewportState,
+        GraphicsPipelineCreateInfo,
+    },
+    GraphicsPipeline,
+};
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
+use super::shader::{ShaderModule as CustomShaderModule, ShaderType};
 use super::vertex::Vertex;
 use crate::core::error::Error;
 
@@ -21,9 +29,9 @@ impl PipelineBuilder {
         fragment_shader: Arc<ShaderModule>,
     ) -> Self {
         let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [0.0, 0.0],
-            depth_range: 0.0..1.0,
+            offset: [0.0, 0.0],
+            extent: [0.0, 0.0],
+            depth_range: 0.0..=1.0,
         };
 
         Self {
@@ -40,14 +48,39 @@ impl PipelineBuilder {
     }
 
     pub fn build(self, subpass: Subpass) -> Result<Arc<GraphicsPipeline>, Error> {
-        let pipeline = GraphicsPipeline::start()
-            .vertex_input_state(Vertex::per_vertex())
-            .vertex_shader(self.vertex_shader.entry_point("main").unwrap(), ())
-            .viewport_state(self.viewport.clone())
-            .fragment_shader(self.fragment_shader.entry_point("main").unwrap(), ())
-            .render_pass(subpass)
-            .build(self.device.clone())
-            .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
+        let vertex_shader_entry =
+            self.vertex_shader
+                .module()
+                .entry_point("main")
+                .ok_or_else(|| {
+                    Error::GraphicsInitialization("Vertex shader entry point not found".to_string())
+                })?;
+
+        let fragment_shader_entry = self
+            .fragment_shader
+            .module()
+            .entry_point("main")
+            .ok_or_else(|| {
+                Error::GraphicsInitialization("Fragment shader entry point not found".to_string())
+            })?;
+
+        let pipeline = GraphicsPipeline::new(
+            self.device.clone(),
+            None,
+            GraphicsPipelineCreateInfo {
+                vertex_input_state: Some(Vertex::per_vertex()),
+                input_assembly_state: Some(InputAssemblyState::default()),
+                vertex_shader_state: vertex_shader_entry,
+                fragment_shader_state: Some(fragment_shader_entry),
+                viewport_state: Some(ViewportState {
+                    viewports: vec![self.viewport].into(),
+                    ..Default::default()
+                }),
+                subpass: Some(subpass),
+                ..Default::default()
+            },
+        )
+        .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
 
         Ok(pipeline)
     }

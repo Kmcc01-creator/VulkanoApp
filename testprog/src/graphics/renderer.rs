@@ -4,11 +4,13 @@ use vulkano::command_buffer::{
     PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo,
 };
 use vulkano::device::Queue;
-use vulkano::image::view::ImageView;
+use vulkano::image::view::{ImageView, ImageViewCreateInfo};
+use vulkano::image::ImageAccess;
 use vulkano::pipeline::GraphicsPipeline;
-use vulkano::render_pass::{Framebuffer, RenderPass};
+use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{
-    self, acquire_next_image, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
+    self, acquire_next_image, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+    SwapchainImage, SwapchainPresentInfo,
 };
 use vulkano::sync::semaphore::{Semaphore, SemaphoreCreateInfo};
 use vulkano::sync::{self, future::GpuFuture};
@@ -18,7 +20,6 @@ use super::RenderPipeline;
 use crate::core::Error;
 
 type CommandBuilder = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
-type SwapchainImageView = ImageView<swapchain::Image>;
 
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
@@ -31,13 +32,13 @@ pub struct Renderer {
     render_pass: Arc<RenderPass>,
     graphics_queue: Arc<Queue>,
     swapchain: Arc<Swapchain>,
-    swapchain_images: Vec<Arc<Image>>,
+    swapchain_images: Vec<Arc<SwapchainImageView>>,
     framebuffers: Vec<Arc<Framebuffer>>,
     frame_sync: Vec<FrameSync>,
     current_frame: usize,
     current_image: u32,
-    command_buffer_allocator: StandardCommandBufferAllocator,
-    current_command_buffer: Option<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>>,
+    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    current_command_buffer: Option<CommandBuilder>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
 }
 
@@ -48,28 +49,27 @@ impl Renderer {
         swapchain: Arc<Swapchain>,
     ) -> Result<Self, Error> {
         // Create command buffer allocator
-        let command_buffer_allocator = StandardCommandBufferAllocator::new(
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
             graphics_queue.device().clone(),
             Default::default(),
-        );
+        ));
 
-        // Get swapchain images directly from the swapchain
+        // Get swapchain images and create image views
         let swapchain_images = swapchain
-            .image_views(ImageView::new_default)
+            .create_image_views(|image| {
+                ImageView::new(image.clone(), ImageView::default_2d_view_info())
+                    .map_err(|e| Error::GraphicsInitialization(e.to_string()))
+            })
             .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
 
-        // Create framebuffers for each swapchain image view
+        // Create framebuffers for each image view
         let framebuffers = swapchain_images
-            .into_iter()
             .iter()
-            .map(|image| {
-                let view = ImageView::new_default(image.clone())
-                    .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
-
+            .map(|view| {
                 Framebuffer::new(
                     render_pass.clone(),
-                    vulkano::render_pass::FramebufferCreateInfo {
-                        attachments: vec![view],
+                    FramebufferCreateInfo {
+                        attachments: vec![view.clone()],
                         ..Default::default()
                     },
                 )

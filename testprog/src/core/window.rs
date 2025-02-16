@@ -170,6 +170,24 @@ impl Window {
     pub fn input(&self) -> &InputState {
         &self.input
     }
+
+    pub fn get_required_extensions(&self) -> Result<vulkano::instance::InstanceExtensions, Error> {
+        let event_loop = self
+            .event_loop
+            .as_ref()
+            .ok_or_else(|| Error::WindowCreation("Event loop not available".into()))?;
+
+        vulkano::swapchain::Surface::required_extensions(event_loop)
+            .map_err(|e| Error::WindowCreation(format!("Failed to get required extensions: {}", e)))
+    }
+
+    pub fn create_surface(
+        &self,
+        instance: Arc<vulkano::instance::Instance>,
+    ) -> Result<Arc<vulkano::swapchain::Surface>, Error> {
+        vulkano::swapchain::Surface::from_window(instance, self.window.clone())
+            .map_err(|e| Error::WindowCreation(format!("Failed to create surface: {}", e)))
+    }
 }
 
 impl Drop for Window {

@@ -1,3 +1,4 @@
+pub mod cad;
 pub mod core;
 pub mod graphics;
 pub mod physics;

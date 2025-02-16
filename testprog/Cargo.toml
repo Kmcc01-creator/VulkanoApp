@@ -8,10 +8,10 @@ name = "testprog"
 path = "main.rs"
 
 [dependencies]
-vulkano = { version = "0.34.0", features = ["macros"] }
-vulkano-shaders = "0.34.0"
-vulkano-util = "0.34.0"
-winit = { version = "0.28", features = ["x11", "wayland"] }
-bytemuck = { version = "1.13", features = ["derive"] }
-glam = "0.24"
+vulkano = { version = "0.35.1", features = ["macros"] }
+vulkano-shaders = "0.35.0"
+vulkano-util = "0.35.0"
+winit = { version = "0.30.9", features = ["x11", "wayland"] }
+bytemuck = { version = "1.21.0", features = ["derive"] }
+glam = "0.29.2"
 memoffset = "0.9"

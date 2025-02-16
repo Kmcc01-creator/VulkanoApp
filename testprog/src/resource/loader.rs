@@ -1,22 +1,23 @@
-use super::asset::{Asset, AssetType};
+use super::asset::{Asset, AssetType, ModelAsset, ShaderAsset, TextureAsset};
 use crate::core::error::Error;
+use std::any::Any;
 use std::path::Path;
 
 pub trait AssetLoader: Send + Sync {
     fn asset_type(&self) -> AssetType;
-    fn load(&self, path: &Path) -> Result<Box<dyn Asset>, Error>;
+    fn load(&self, path: &Path) -> Result<Box<dyn Any + Send + Sync>, Error>;
     fn extensions(&self) -> &[&str];
 }
 
 pub struct TextureLoader;
 impl AssetLoader for TextureLoader {
     fn asset_type(&self) -> AssetType {
-        AssetType::Texture
+        TextureAsset::asset_type()
     }
 
-    fn load(&self, _path: &Path) -> Result<Box<dyn Asset>, Error> {
-        // TODO: Implement texture loading using vulkan
-        unimplemented!("Texture loading not yet implemented")
+    fn load(&self, path: &Path) -> Result<Box<dyn Any + Send + Sync>, Error> {
+        let asset = TextureAsset::new(path.to_owned());
+        Ok(Box::new(asset))
     }
 
     fn extensions(&self) -> &[&str] {
@@ -27,12 +28,12 @@ impl AssetLoader for TextureLoader {
 pub struct ShaderLoader;
 impl AssetLoader for ShaderLoader {
     fn asset_type(&self) -> AssetType {
-        AssetType::Shader
+        ShaderAsset::asset_type()
     }
 
-    fn load(&self, _path: &Path) -> Result<Box<dyn Asset>, Error> {
-        // TODO: Implement shader loading using vulkan
-        unimplemented!("Shader loading not yet implemented")
+    fn load(&self, path: &Path) -> Result<Box<dyn Any + Send + Sync>, Error> {
+        let asset = ShaderAsset::new(path.to_owned());
+        Ok(Box::new(asset))
     }
 
     fn extensions(&self) -> &[&str] {
@@ -43,12 +44,12 @@ impl AssetLoader for ShaderLoader {
 pub struct ModelLoader;
 impl AssetLoader for ModelLoader {
     fn asset_type(&self) -> AssetType {
-        AssetType::Model
+        ModelAsset::asset_type()
     }
 
-    fn load(&self, _path: &Path) -> Result<Box<dyn Asset>, Error> {
-        // TODO: Implement model loading
-        unimplemented!("Model loading not yet implemented")
+    fn load(&self, path: &Path) -> Result<Box<dyn Any + Send + Sync>, Error> {
+        let asset = ModelAsset::new(path.to_owned());
+        Ok(Box::new(asset))
     }
 
     fn extensions(&self) -> &[&str] {

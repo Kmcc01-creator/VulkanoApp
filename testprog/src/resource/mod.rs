@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use asset::{Asset, AssetHandle, AssetType};
+pub use asset::{Asset, AssetType};
 pub use cache::AssetCache;
 pub use loader::AssetLoader;
 
@@ -27,26 +27,41 @@ impl ResourceManager {
         }
     }
 
-    pub fn load_asset<T: Asset>(&mut self, path: &str) -> Result<AssetHandle<T>, Error> {
-        let asset_type = T::asset_type();
+    pub fn load_asset<T: Asset + 'static>(&mut self, path: &str) -> Result<Arc<T>, Error> {
         let full_path = self.asset_path.join(path);
 
-        if let Some(cached) = self.cache.get(&full_path) {
-            return Ok(cached.clone());
+        // Try to get from cache first
+        if let Some(asset) = self.cache.get::<T>(&full_path) {
+            return Ok(asset);
         }
 
-        let loader = self.loaders.get(&asset_type).ok_or_else(|| {
-            Error::ResourceError(format!("No loader for asset type {:?}", asset_type))
+        // Load using appropriate loader
+        let loader = self.loaders.get(&T::asset_type()).ok_or_else(|| {
+            Error::ResourceError(format!("No loader for asset type {:?}", T::asset_type()))
         })?;
 
         let asset = loader.load(&full_path)?;
-        let handle = self.cache.insert(full_path, asset);
+        let asset = asset
+            .as_any()
+            .downcast_ref::<T>()
+            .ok_or_else(|| {
+                Error::ResourceError(format!(
+                    "Asset loaded from {} is not of expected type {}",
+                    path,
+                    std::any::type_name::<T>()
+                ))
+            })?
+            .clone();
 
-        Ok(handle)
+        Ok(self.cache.insert(full_path, asset))
     }
 
     pub fn register_loader<L: AssetLoader + 'static>(&mut self, loader: L) {
         self.loaders.insert(loader.asset_type(), Box::new(loader));
+    }
+
+    pub fn set_asset_path<P: Into<PathBuf>>(&mut self, path: P) {
+        self.asset_path = path.into();
     }
 }
 

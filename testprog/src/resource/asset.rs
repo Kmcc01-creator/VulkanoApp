@@ -1,6 +1,5 @@
-use std::any::TypeId;
+use std::any::Any;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AssetType {
@@ -12,88 +11,104 @@ pub enum AssetType {
 }
 
 pub trait Asset: 'static + Send + Sync {
-    fn asset_type(&self) -> AssetType;
+    fn asset_type() -> AssetType
+    where
+        Self: Sized;
     fn path(&self) -> &PathBuf;
+    fn as_any(&self) -> &dyn Any;
+    fn clone_box(&self) -> Box<dyn Asset>;
 }
 
-#[derive(Clone)]
-pub struct AssetHandle<T: Asset> {
-    asset: Arc<T>,
-    path: PathBuf,
-}
-
-impl<T: Asset> AssetHandle<T> {
-    pub fn new(asset: T, path: PathBuf) -> Self {
-        Self {
-            asset: Arc::new(asset),
-            path,
-        }
-    }
-
-    pub fn get(&self) -> &T {
-        &self.asset
-    }
-
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-
-    pub fn clone_inner(&self) -> Arc<T> {
-        self.asset.clone()
+// Enable cloning for boxed assets
+impl Clone for Box<dyn Asset> {
+    fn clone(&self) -> Self {
+        self.clone_box()
     }
 }
 
-impl<T: Asset> std::fmt::Debug for AssetHandle<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AssetHandle")
-            .field("type", &std::any::type_name::<T>())
-            .field("path", &self.path)
-            .finish()
-    }
-}
-
-// Common asset types
+#[derive(Debug, Clone)]
 pub struct TextureAsset {
     path: PathBuf,
-    // Add texture-specific fields
+}
+
+impl TextureAsset {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl Asset for TextureAsset {
-    fn asset_type(&self) -> AssetType {
+    fn asset_type() -> AssetType {
         AssetType::Texture
     }
 
     fn path(&self) -> &PathBuf {
         &self.path
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Asset> {
+        Box::new(self.clone())
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct ModelAsset {
     path: PathBuf,
-    // Add model-specific fields
+}
+
+impl ModelAsset {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl Asset for ModelAsset {
-    fn asset_type(&self) -> AssetType {
+    fn asset_type() -> AssetType {
         AssetType::Model
     }
 
     fn path(&self) -> &PathBuf {
         &self.path
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Asset> {
+        Box::new(self.clone())
+    }
 }
 
+#[derive(Debug, Clone)]
 pub struct ShaderAsset {
     path: PathBuf,
-    // Add shader-specific fields
+}
+
+impl ShaderAsset {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl Asset for ShaderAsset {
-    fn asset_type(&self) -> AssetType {
+    fn asset_type() -> AssetType {
         AssetType::Shader
     }
 
     fn path(&self) -> &PathBuf {
         &self.path
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn clone_box(&self) -> Box<dyn Asset> {
+        Box::new(self.clone())
     }
 }

@@ -1,23 +1,14 @@
 use glam::Vec2;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::layout::Layout;
+use super::mock_renderer::MockRenderer;
 use super::style::Style;
+use super::widget::Widget;
 use crate::core::error::Error;
-use crate::graphics::Graphics;
 
-#[derive(Debug, Clone, Default)]
-pub struct Element {
-    pub id: String,
-    pub children: Vec<Element>,
-    pub layout: Layout,
-    pub style: Style,
-    pub computed_bounds: Rect,
-    pub events: EventHandlers,
-    widget: Option<Box<dyn Widget>>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub position: Vec2,
     pub size: Vec2,
@@ -36,18 +27,58 @@ impl Rect {
     }
 }
 
-pub trait Widget: std::fmt::Debug {
-    fn render(&self, bounds: Rect, graphics: &mut Graphics) -> Result<(), Error>;
-    fn update(&mut self);
-    fn measure(&self, available_space: Vec2) -> Vec2;
+#[derive(Debug)]
+pub struct Element {
+    pub id: String,
+    pub children: Vec<Element>,
+    pub layout: Layout,
+    pub style: Style,
+    pub computed_bounds: Rect,
+    events: EventHandlers,
+    widget: Option<Arc<dyn Widget>>,
 }
 
-#[derive(Debug, Clone, Default)]
+impl Default for Element {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            children: Vec::new(),
+            layout: Layout::default(),
+            style: Style::default(),
+            computed_bounds: Rect::new(Vec2::ZERO, Vec2::ZERO),
+            events: EventHandlers::default(),
+            widget: None,
+        }
+    }
+}
+
 pub struct EventHandlers {
-    click: Option<Box<dyn Fn() + Send + Sync>>,
-    hover: Option<Box<dyn Fn(bool) + Send + Sync>>,
-    key: Option<Box<dyn Fn(char) + Send + Sync>>,
-    custom: HashMap<String, Box<dyn Fn() + Send + Sync>>,
+    click: Option<Arc<dyn Fn() + Send + Sync + 'static>>,
+    hover: Option<Arc<dyn Fn(bool) + Send + Sync + 'static>>,
+    key: Option<Arc<dyn Fn(char) + Send + Sync + 'static>>,
+    custom: HashMap<String, Arc<dyn Fn() + Send + Sync + 'static>>,
+}
+
+impl Default for EventHandlers {
+    fn default() -> Self {
+        Self {
+            click: None,
+            hover: None,
+            key: None,
+            custom: HashMap::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for EventHandlers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventHandlers")
+            .field("click", &self.click.is_some())
+            .field("hover", &self.hover.is_some())
+            .field("key", &self.key.is_some())
+            .field("custom", &self.custom.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl Element {
@@ -60,8 +91,8 @@ impl Element {
         self
     }
 
-    pub fn with_widget<W: Widget + 'static>(mut self, widget: W) -> Self {
-        self.widget = Some(Box::new(widget));
+    pub fn with_widget(mut self, widget: impl Widget + 'static) -> Self {
+        self.widget = Some(Arc::new(widget));
         self
     }
 
@@ -80,15 +111,15 @@ impl Element {
         self.children.last_mut().unwrap()
     }
 
-    pub fn render(&self, graphics: &mut Graphics) -> Result<(), Error> {
+    pub fn render(&self, renderer: &mut MockRenderer) -> Result<(), Error> {
         // Render self if we have a widget
         if let Some(widget) = &self.widget {
-            widget.render(self.computed_bounds.clone(), graphics)?;
+            widget.render(self.computed_bounds, &self.style, renderer)?;
         }
 
         // Render children
         for child in &self.children {
-            child.render(graphics)?;
+            child.render(renderer)?;
         }
 
         Ok(())
@@ -97,7 +128,9 @@ impl Element {
     pub fn update(&mut self) {
         // Update self if we have a widget
         if let Some(widget) = &mut self.widget {
-            widget.update();
+            Arc::get_mut(widget)
+                .expect("Cannot mutably update widget with multiple references")
+                .update();
         }
 
         // Update children
@@ -106,41 +139,32 @@ impl Element {
         }
     }
 
-    pub fn layout(&mut self, bounds: Rect, parent_style: &Style) {
-        // Compute layout based on parent bounds and style
-        self.computed_bounds = self.layout.compute(bounds, parent_style);
+    pub fn layout(&mut self, available_space: Rect) {
+        // Calculate this element's bounds based on layout constraints
+        self.computed_bounds = self.layout.calculate_bounds(available_space, &self.style);
+
+        // Create content area for children (accounting for padding)
+        let content_space = self.layout.calculate_content_area(self.computed_bounds);
 
         // Layout children
-        let available_space = Vec2::new(
-            self.computed_bounds.size.x - self.style.padding.left - self.style.padding.right,
-            self.computed_bounds.size.y - self.style.padding.top - self.style.padding.bottom,
-        );
-
         for child in &mut self.children {
-            child.layout(
-                Rect::new(
-                    self.computed_bounds.position
-                        + Vec2::new(self.style.padding.left, self.style.padding.top),
-                    available_space,
-                ),
-                &self.style,
-            );
+            child.layout(content_space);
         }
     }
 
     // Event handling
     pub fn on_click<F: Fn() + Send + Sync + 'static>(mut self, f: F) -> Self {
-        self.events.click = Some(Box::new(f));
+        self.events.click = Some(Arc::new(f));
         self
     }
 
     pub fn on_hover<F: Fn(bool) + Send + Sync + 'static>(mut self, f: F) -> Self {
-        self.events.hover = Some(Box::new(f));
+        self.events.hover = Some(Arc::new(f));
         self
     }
 
     pub fn on_key<F: Fn(char) + Send + Sync + 'static>(mut self, f: F) -> Self {
-        self.events.key = Some(Box::new(f));
+        self.events.key = Some(Arc::new(f));
         self
     }
 
@@ -149,7 +173,7 @@ impl Element {
         event: S,
         f: F,
     ) -> Self {
-        self.events.custom.insert(event.into(), Box::new(f));
+        self.events.custom.insert(event.into(), Arc::new(f));
         self
     }
 
@@ -157,11 +181,21 @@ impl Element {
         if let Some(handler) = &self.events.click {
             handler();
         }
+
+        // Propagate to children
+        for child in &self.children {
+            child.handle_click();
+        }
     }
 
     pub fn handle_hover(&self, is_hover: bool) {
         if let Some(handler) = &self.events.hover {
             handler(is_hover);
+        }
+
+        // Propagate to children
+        for child in &self.children {
+            child.handle_hover(is_hover);
         }
     }
 
@@ -169,11 +203,21 @@ impl Element {
         if let Some(handler) = &self.events.key {
             handler(key);
         }
+
+        // Propagate to children
+        for child in &self.children {
+            child.handle_key(key);
+        }
     }
 
     pub fn handle_custom(&self, event: &str) {
         if let Some(handler) = self.events.custom.get(event) {
             handler();
+        }
+
+        // Propagate to children
+        for child in &self.children {
+            child.handle_custom(event);
         }
     }
 }

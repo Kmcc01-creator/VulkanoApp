@@ -1,7 +1,6 @@
 mod device;
 mod pipeline;
-mod renderer;
-mod resource;
+pub mod renderer;
 mod shader;
 mod swapchain;
 mod vertex;
@@ -9,11 +8,12 @@ mod vertex;
 pub use device::DeviceContext;
 pub use pipeline::RenderPipeline;
 pub use renderer::RenderContext;
-pub use resource::{Material, MaterialBuilder, MaterialProperties, ShaderCache};
-pub use shader::{ShaderModule, ShaderType};
+pub use shader::ShaderModule;
 pub use swapchain::SwapchainContext;
 pub use vertex::{Mesh, Vertex2D, Vertex3D};
 
+use crate::core::Error;
+use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::format::Format;
 use vulkano::image::{ImageLayout, ImageUsage, SampleCount};
@@ -23,16 +23,13 @@ use vulkano::render_pass::{
 };
 use vulkano::sync::GpuFuture;
 
-use crate::core::Error;
-use std::sync::Arc;
-
 pub fn create_render_pass(device: Arc<Device>, format: Format) -> Result<Arc<RenderPass>, Error> {
     let render_pass = RenderPass::new(
         device,
         RenderPassCreateInfo {
             flags: Default::default(),
             attachments: vec![AttachmentDescription {
-                format: Some(format),
+                format,
                 samples: SampleCount::Sample1,
                 load_op: vulkano::render_pass::LoadOp::Clear,
                 store_op: vulkano::render_pass::StoreOp::Store,

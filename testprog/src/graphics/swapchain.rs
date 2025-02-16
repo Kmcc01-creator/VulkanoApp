@@ -1,121 +1,119 @@
+use crate::core::error::Error;
 use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::format::Format;
+use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageUsage};
-use vulkano::swapchain::{
-    acquire_next_image, PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo,
-};
-use vulkano::sync::future::FenceSignalFuture;
-use vulkano::sync::{GpuFuture, Semaphore};
-
-use crate::core::Error;
+use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 
 pub struct SwapchainContext {
-    pub swapchain: Arc<Swapchain>,
-    pub images: Vec<Arc<Image>>,
-    surface_format: Format,
-    present_mode: PresentMode,
+    swapchain: Arc<Swapchain>,
+    images: Vec<Arc<Image>>,
+    image_views: Vec<Arc<ImageView>>,
+    format: Format,
+    extent: [u32; 2],
 }
 
 impl SwapchainContext {
-    pub fn new(
-        device: Arc<Device>,
-        surface: Arc<Surface>,
-        present_mode: Option<PresentMode>,
-    ) -> Result<Self, Error> {
-        let surface_capabilities = device
+    pub fn new(device: Arc<Device>, surface: Arc<Surface>) -> Result<Self, Error> {
+        let surface_caps = device
             .physical_device()
             .surface_capabilities(&surface, Default::default())
             .map_err(|e| {
                 Error::GraphicsInitialization(format!("Failed to get surface capabilities: {}", e))
             })?;
 
-        let surface_formats = device
+        let format = *device
             .physical_device()
             .surface_formats(&surface, Default::default())
             .map_err(|e| {
                 Error::GraphicsInitialization(format!("Failed to get surface formats: {}", e))
+            })?
+            .iter()
+            .next()
+            .ok_or_else(|| {
+                Error::GraphicsInitialization("No surface formats available".to_string())
             })?;
 
-        // Choose the first available format
-        let surface_format = surface_formats[0].0;
-
-        // Use provided present mode or default to Fifo (vsync)
-        let present_mode = present_mode.unwrap_or(PresentMode::Fifo);
-
-        let window = surface
-            .object()
-            .unwrap()
-            .downcast_ref::<winit::window::Window>()
-            .unwrap();
-        let image_extent: [u32; 2] = window.inner_size().into();
+        let extent = surface_caps.current_extent.unwrap_or([800, 600]);
 
         let (swapchain, images) = Swapchain::new(
-            device,
+            device.clone(),
             surface,
             SwapchainCreateInfo {
-                min_image_count: surface_capabilities.min_image_count,
-                image_format: surface_format,
-                image_extent,
+                min_image_count: surface_caps.min_image_count + 1,
+                image_format: format,
+                image_extent: extent,
                 image_usage: ImageUsage::COLOR_ATTACHMENT,
-                composite_alpha: surface_capabilities
+                composite_alpha: surface_caps
                     .supported_composite_alpha
-                    .iter()
+                    .into_iter()
                     .next()
                     .unwrap(),
-                present_mode,
                 ..Default::default()
             },
         )
         .map_err(|e| Error::GraphicsInitialization(format!("Failed to create swapchain: {}", e)))?;
 
+        let image_views = images
+            .iter()
+            .map(|image| {
+                ImageView::new_default(image.clone()).map_err(|e| {
+                    Error::GraphicsInitialization(format!("Failed to create image view: {}", e))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         Ok(Self {
             swapchain,
             images,
-            surface_format,
-            present_mode,
+            image_views,
+            format,
+            extent,
         })
     }
 
-    pub fn recreate(&mut self) -> Result<(), Error> {
-        let window = self
-            .swapchain
-            .surface()
-            .object()
-            .unwrap()
-            .downcast_ref::<winit::window::Window>()
-            .unwrap();
-        let image_extent: [u32; 2] = window.inner_size().into();
-
-        let (new_swapchain, new_images) = self
-            .swapchain
-            .recreate(SwapchainCreateInfo {
-                image_extent,
-                ..self.swapchain.create_info()
-            })
-            .map_err(|e| {
-                Error::GraphicsInitialization(format!("Failed to recreate swapchain: {}", e))
-            })?;
-
-        self.swapchain = new_swapchain;
-        self.images = new_images;
-
-        Ok(())
-    }
-
-    pub fn acquire_next_image(
-        &self,
-        semaphore: Arc<Semaphore>,
-    ) -> Result<(u32, bool, FenceSignalFuture<Box<dyn GpuFuture>>), Error> {
-        acquire_next_image(self.swapchain.clone(), None)
-            .map_err(|e| Error::RenderError(format!("Failed to acquire next image: {}", e)))
-    }
-
     pub fn format(&self) -> Format {
-        self.surface_format
+        self.format
     }
 
     pub fn extent(&self) -> [u32; 2] {
-        self.swapchain.image_extent()
+        self.extent
+    }
+
+    pub fn image_views(&self) -> &[Arc<ImageView>] {
+        &self.image_views
+    }
+
+    pub fn recreate(&mut self) -> Result<(), Error> {
+        let (new_swapchain, new_images) = self
+            .swapchain
+            .recreate(SwapchainCreateInfo {
+                ..self.swapchain.create_info()
+            })
+            .map_err(|e| Error::RenderError(format!("Failed to recreate swapchain: {}", e)))?;
+
+        let new_image_views = new_images
+            .iter()
+            .map(|image| {
+                ImageView::new_default(image.clone()).map_err(|e| {
+                    Error::GraphicsInitialization(format!("Failed to create image view: {}", e))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.swapchain = new_swapchain;
+        self.images = new_images;
+        self.image_views = new_image_views;
+
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for SwapchainContext {
+    type Target = Arc<Swapchain>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.swapchain
     }
 }

@@ -1,90 +1,101 @@
-use super::error::Error;
-use super::input::InputState;
-use super::window::Window;
-use crate::graphics::Graphics;
-use crate::resource::ResourceManager;
-use crate::scene::SceneManager;
+use std::sync::Arc;
 
-/// The main engine struct that coordinates all systems
+use crate::core::error::Error;
+use crate::core::input::InputState;
+use crate::graphics::renderer::RenderContext;
+use crate::ui::UI;
+
 pub struct Engine {
-    window: Window,
-    graphics: Graphics,
-    resources: ResourceManager,
-    scene_manager: SceneManager,
-    debug_input: bool,
+    input: InputState,
+    renderer: Option<RenderContext>,
+    ui: Option<UI>,
 }
 
 impl Engine {
-    /// Create a new engine instance
-    pub fn new() -> Result<Self, Error> {
-        let window = Window::new()?;
-        let graphics = Graphics::new(&window)?;
-        let resources = ResourceManager::new();
-        let scene_manager = SceneManager::new();
-
-        Ok(Self {
-            window,
-            graphics,
-            resources,
-            scene_manager,
-            debug_input: false,
-        })
-    }
-
-    /// Enable input debugging
-    pub fn enable_input_debug(&mut self) {
-        self.debug_input = true;
-    }
-
-    /// Run the main engine loop
-    pub fn run(&mut self) -> Result<(), Error> {
-        while !self.window.should_close() {
-            self.update()?;
-            self.render()?;
+    pub fn new() -> Self {
+        Self {
+            input: InputState::new(),
+            renderer: None,
+            ui: None,
         }
-        Ok(())
     }
 
-    /// Update game logic
-    fn update(&mut self) -> Result<(), Error> {
-        // Update window and process events
-        self.window.update();
+    pub fn initialize_graphics(&mut self, renderer: RenderContext) -> Result<(), Error> {
+        self.renderer = Some(renderer);
 
-        // Get input state
-        let input = self.window.input();
-
-        // Debug input if enabled
-        if self.debug_input {
-            let pos = input.mouse_position();
-            let delta = input.mouse_delta();
-            println!(
-                "Mouse - Pos: ({:.1}, {:.1}), Delta: ({:.1}, {:.1}), Left: {}, Right: {}",
-                pos.x,
-                pos.y,
-                delta.0,
-                delta.1,
-                input.is_mouse_button_pressed(winit::event::MouseButton::Left),
-                input.is_mouse_button_pressed(winit::event::MouseButton::Right)
-            );
-        }
-
-        // Update scene with input
-        self.scene_manager.update(&self.resources);
+        // Initialize UI system with viewport size
+        let viewport_size = renderer.viewport_size();
+        self.ui = Some(UI::new(viewport_size));
 
         Ok(())
     }
 
-    /// Render the current frame
-    fn render(&mut self) -> Result<(), Error> {
-        // Handle window resize
-        if self.window.was_resized() {
-            let (width, height) = self.window.size();
-            self.graphics.update_viewport(width, height)?;
+    pub fn update(&mut self) -> Result<(), Error> {
+        // Update input state
+        self.input.update();
+
+        // Update UI if initialized
+        if let Some(ui) = &mut self.ui {
+            ui.update();
         }
 
-        self.graphics.begin_frame()?;
-        self.scene_manager.render(&mut self.graphics)?;
-        self.graphics.end_frame()?;
         Ok(())
+    }
+
+    pub fn render(&mut self) -> Result<(), Error> {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.begin_frame()?;
+
+            // Render UI if initialized
+            if let Some(ui) = &mut self.ui {
+                ui.render()?;
+            }
+
+            renderer.end_frame()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn handle_input(&mut self, event: &winit::event::WindowEvent) {
+        self.input.handle_event(event);
+
+        // Forward relevant input events to UI
+        if let Some(ui) = &mut self.ui {
+            match event {
+                winit::event::WindowEvent::CursorMoved { position, .. } => {
+                    let pos = glam::Vec2::new(position.x as f32, position.y as f32);
+                    ui.handle_hover(pos);
+                }
+                winit::event::WindowEvent::MouseInput {
+                    state: winit::event::ElementState::Pressed,
+                    ..
+                } => {
+                    if let Some(pos) = self.input.cursor_position() {
+                        ui.handle_click(pos);
+                    }
+                }
+                winit::event::WindowEvent::ReceivedCharacter(c) => {
+                    ui.handle_key(*c);
+                }
+                winit::event::WindowEvent::Resized(size) => {
+                    let new_size = glam::Vec2::new(size.width as f32, size.height as f32);
+                    ui.resize(new_size);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn input(&self) -> &InputState {
+        &self.input
+    }
+
+    pub fn input_mut(&mut self) -> &mut InputState {
+        &mut self.input
+    }
+
+    pub fn ui(&mut self) -> Option<&mut UI> {
+        self.ui.as_mut()
     }
 }

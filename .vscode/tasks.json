@@ -1,0 +1,31 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build and Capture Output",
+            "type": "shell",
+            "command": "cargo build 2>&1 | tee ${workspaceFolder}/build_output.log",
+            "presentation": {
+                "reveal": "always",
+                "panel": "new",
+                "clear": true,
+                "focus": true
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                {
+                    "owner": "rust",
+                    "fileLocation": ["relative", "${workspaceFolder}"],
+                    "pattern": {
+                        "regexp": "^(?:warning|error)(?:\\[(.*)\\])?: (.*)$",
+                        "severity": 1,
+                        "message": 2
+                    }
+                }
+            ]
+        }
+    ]
+}

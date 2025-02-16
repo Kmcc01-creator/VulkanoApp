@@ -3,89 +3,60 @@ use std::collections::HashMap;
 
 use super::collider::{Collider, AABB};
 use super::rigidbody::{BodyType, RigidBody};
-use crate::core::error::Error;
 
+#[derive(Debug)]
 pub struct Contact {
-    pub body_a: usize,
-    pub body_b: usize,
     pub normal: Vec3,
     pub penetration: f32,
-    pub contact_point: Vec3,
+    pub position: Vec3,
 }
 
-#[derive(Default)]
+#[derive(Debug)]
+pub struct CollisionPair {
+    body_a: usize,
+    body_b: usize,
+    contact: Contact,
+}
+
+#[derive(Debug)]
 pub struct PhysicsWorld {
-    rigid_bodies: HashMap<usize, RigidBody>,
-    colliders: HashMap<usize, Collider>,
-    body_collider_map: HashMap<usize, usize>,
+    bodies: Vec<RigidBody>,
+    colliders: Vec<Option<Collider>>,
     gravity: Vec3,
-    contacts: Vec<Contact>,
+    iterations: usize,
+}
+
+impl Default for PhysicsWorld {
+    fn default() -> Self {
+        Self {
+            bodies: Vec::new(),
+            colliders: Vec::new(),
+            gravity: Vec3::new(0.0, -9.81, 0.0),
+            iterations: 4,
+        }
+    }
 }
 
 impl PhysicsWorld {
     pub fn new() -> Self {
-        Self {
-            rigid_bodies: HashMap::new(),
-            colliders: HashMap::new(),
-            body_collider_map: HashMap::new(),
-            gravity: Vec3::new(0.0, -9.81, 0.0),
-            contacts: Vec::new(),
-        }
+        Self::default()
     }
 
-    pub fn add_rigidbody(&mut self, body: RigidBody) -> usize {
-        let id = self.next_body_id();
-        self.rigid_bodies.insert(id, body);
-        id
-    }
-
-    pub fn add_collider(&mut self, collider: Collider, body_id: usize) {
-        let collider_id = self.next_collider_id();
-        self.colliders.insert(collider_id, collider);
-        self.body_collider_map.insert(body_id, collider_id);
-    }
-
-    pub fn step(&mut self, dt: f32, gravity: Vec3, iterations: u32) {
-        // Clear previous contacts
-        self.contacts.clear();
-
-        // Broad phase collision detection
-        let mut potential_contacts = self.broad_phase();
-
-        // Narrow phase collision detection
-        self.narrow_phase(&mut potential_contacts);
-
-        // Solve constraints
-        for _ in 0..iterations {
-            self.solve_contacts(dt);
-        }
-
-        // Integrate velocities
-        self.integrate(dt, gravity);
-    }
-
-    fn next_body_id(&self) -> usize {
-        self.rigid_bodies.keys().max().map_or(0, |&id| id + 1)
-    }
-
-    fn next_collider_id(&self) -> usize {
-        self.colliders.keys().max().map_or(0, |&id| id + 1)
-    }
-
-    fn broad_phase(&self) -> Vec<(usize, usize)> {
+    fn detect_collisions(&self) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
-        let bodies: Vec<_> = self.rigid_bodies.keys().collect();
+        let body_count = self.bodies.len();
 
-        for (i, &body_a) in bodies.iter().enumerate() {
-            if let Some(collider_a) = self.get_body_collider(body_a) {
-                let aabb_a = self.compute_aabb(body_a, collider_a);
+        for i in 0..body_count {
+            if let Some(collider_a) = self.get_body_collider(i) {
+                let body_a = &self.bodies[i];
+                let aabb_a = collider_a.compute_aabb(body_a.position, body_a.rotation);
 
-                for &body_b in &bodies[i + 1..] {
-                    if let Some(collider_b) = self.get_body_collider(body_b) {
-                        let aabb_b = self.compute_aabb(body_b, collider_b);
-
+                for j in (i + 1)..body_count {
+                    if let Some(collider_b) = self.get_body_collider(j) {
+                        let body_b = &self.bodies[j];
+                        let aabb_b = collider_b.compute_aabb(body_b.position, body_b.rotation);
                         if aabb_a.intersects(&aabb_b) {
-                            pairs.push((body_a, body_b));
+                            pairs.push((i, j));
                         }
                     }
                 }
@@ -95,102 +66,125 @@ impl PhysicsWorld {
         pairs
     }
 
-    fn narrow_phase(&mut self, pairs: &[(usize, usize)]) {
-        for &(body_a, body_b) in pairs {
-            if let (Some(rb_a), Some(rb_b)) = (
-                self.rigid_bodies.get(&body_a),
-                self.rigid_bodies.get(&body_b),
-            ) {
-                // Skip if both bodies are static or kinematic
-                if rb_a.body_type == BodyType::Static && rb_b.body_type == BodyType::Static {
-                    continue;
-                }
-
-                if let (Some(collider_a), Some(collider_b)) = (
-                    self.get_body_collider(body_a),
-                    self.get_body_collider(body_b),
-                ) {
-                    // TODO: Implement detailed collision detection based on shape types
-                    // For now, we'll just use AABB intersection
-                    let aabb_a = self.compute_aabb(body_a, collider_a);
-                    let aabb_b = self.compute_aabb(body_b, collider_b);
-
-                    if aabb_a.intersects(&aabb_b) {
-                        // Create a basic contact
-                        let normal = (rb_b.position - rb_a.position).normalize();
-                        self.contacts.push(Contact {
-                            body_a,
-                            body_b,
-                            normal,
-                            penetration: 0.1, // placeholder
-                            contact_point: rb_a.position + normal * 0.5,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    fn solve_contacts(&mut self, dt: f32) {
-        for contact in &self.contacts {
-            if let (Some(body_a), Some(body_b)) = (
-                self.rigid_bodies.get_mut(&contact.body_a),
-                self.rigid_bodies.get_mut(&contact.body_b),
-            ) {
-                // Basic impulse resolution
-                let relative_velocity = body_b.linear_velocity - body_a.linear_velocity;
-                let velocity_along_normal = relative_velocity.dot(contact.normal);
-
-                // Don't resolve if objects are separating
-                if velocity_along_normal > 0.0 {
-                    continue;
-                }
-
-                let restitution = 0.5; // Could be derived from materials
-                let j = -(1.0 + restitution) * velocity_along_normal;
-                let impulse = contact.normal * j;
-
-                if body_a.body_type == BodyType::Dynamic {
-                    body_a.linear_velocity -= impulse / body_a.mass;
-                }
-                if body_b.body_type == BodyType::Dynamic {
-                    body_b.linear_velocity += impulse / body_b.mass;
-                }
-            }
-        }
-    }
-
-    fn integrate(&mut self, dt: f32, gravity: Vec3) {
-        for body in self.rigid_bodies.values_mut() {
-            if body.body_type != BodyType::Dynamic || body.sleeping {
+    pub fn step(&mut self, dt: f32) {
+        // Integrate forces
+        for body in &mut self.bodies {
+            if body.body_type == BodyType::Static {
                 continue;
             }
 
             // Apply gravity
-            body.linear_velocity += gravity * body.gravity_scale * dt;
+            body.force += body.gravity_scale * self.gravity * body.mass;
 
-            // Apply damping
-            body.linear_velocity *= 1.0 / (1.0 + body.linear_damping * dt);
-            body.angular_velocity *= 1.0 / (1.0 + body.angular_damping * dt);
+            // Semi-implicit Euler integration
+            body.velocity += body.force / body.mass * dt;
+            body.angular_velocity += body.torque / body.inertia * dt;
 
             // Update position and rotation
-            body.position += body.linear_velocity * dt;
-            let rotation_vec = body.angular_velocity * dt;
-            if rotation_vec.length_squared() > 0.0 {
-                let rotation = Quat::from_rotation_vec(rotation_vec);
+            body.position += body.velocity * dt;
+            if body.angular_velocity.length_squared() > 1e-6 {
+                let rotation_vec = body.angular_velocity * dt;
+                let rotation =
+                    Quat::from_axis_angle(rotation_vec.normalize(), rotation_vec.length());
                 body.rotation = rotation * body.rotation;
+            }
+
+            // Clear forces
+            body.force = Vec3::ZERO;
+            body.torque = Vec3::ZERO;
+        }
+
+        // Collision detection
+        let collision_pairs = self.detect_collisions();
+
+        // Collision resolution iterations
+        for _ in 0..self.iterations {
+            for &(i, j) in &collision_pairs {
+                // Get collision data
+                let (pos_a, pos_b, vel_a, vel_b, mass_a, mass_b, rest_a, rest_b, type_a, type_b) = {
+                    let body_a = &self.bodies[i];
+                    let body_b = &self.bodies[j];
+                    (
+                        body_a.position,
+                        body_b.position,
+                        body_a.velocity,
+                        body_b.velocity,
+                        body_a.mass,
+                        body_b.mass,
+                        body_a.restitution,
+                        body_b.restitution,
+                        body_a.body_type,
+                        body_b.body_type,
+                    )
+                };
+
+                // Skip static-static collisions
+                if type_a == BodyType::Static && type_b == BodyType::Static {
+                    continue;
+                }
+
+                // Create basic contact (this would normally come from collision detection)
+                let contact = Contact {
+                    normal: (pos_b - pos_a).normalize(),
+                    penetration: 0.01, // Example value
+                    position: (pos_a + pos_b) * 0.5,
+                };
+
+                // Calculate impulse
+                let rel_vel = vel_b - vel_a;
+                let restitution = (rest_a + rest_b) * 0.5;
+                let j = -(1.0 + restitution) * Vec3::dot(rel_vel, contact.normal);
+                let impulse = contact.normal * j;
+
+                // Apply impulse and position correction
+                let percent = 0.2;
+                let slop = 0.01;
+                let correction = contact.normal * (contact.penetration - slop).max(0.0) * percent
+                    / (1.0 / mass_a + 1.0 / mass_b);
+
+                // Update bodies
+                if type_a == BodyType::Dynamic {
+                    let body = &mut self.bodies[i];
+                    body.velocity -= impulse / mass_a;
+                    body.position -= correction / mass_a;
+                }
+
+                if type_b == BodyType::Dynamic {
+                    let body = &mut self.bodies[j];
+                    body.velocity += impulse / mass_b;
+                    body.position += correction / mass_b;
+                }
+            }
+        }
+
+        // Update sleeping state
+        for body in &mut self.bodies {
+            if body.body_type != BodyType::Dynamic || body.sleeping {
+                continue;
+            }
+
+            if body.velocity.length_squared() < 0.01
+                && body.angular_velocity.length_squared() < 0.01
+            {
+                body.set_sleeping(true);
             }
         }
     }
 
-    fn get_body_collider(&self, body_id: usize) -> Option<&Collider> {
-        self.body_collider_map
-            .get(&body_id)
-            .and_then(|&collider_id| self.colliders.get(&collider_id))
+    pub fn add_body(&mut self, body: RigidBody) -> usize {
+        let index = self.bodies.len();
+        self.bodies.push(body);
+        self.colliders.push(None);
+        index
     }
 
-    fn compute_aabb(&self, body_id: usize, collider: &Collider) -> AABB {
-        let body = &self.rigid_bodies[&body_id];
-        collider.compute_aabb(body.position, body.rotation)
+    pub fn set_body_collider(&mut self, body_id: usize, collider: Collider) {
+        if body_id < self.colliders.len() {
+            self.colliders[body_id] = Some(collider);
+        }
+    }
+
+    fn get_body_collider(&self, body_id: usize) -> Option<&Collider> {
+        self.colliders.get(body_id).and_then(|c| c.as_ref())
     }
 }

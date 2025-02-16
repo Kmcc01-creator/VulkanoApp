@@ -48,19 +48,15 @@ impl PhysicsEngine {
 
     fn step(&mut self) {
         // Update physics simulation
-        self.world.step(
-            self.config.timestep,
-            self.config.gravity,
-            self.config.iterations,
-        );
+        self.world.step(self.config.timestep);
     }
 
     pub fn add_rigidbody(&mut self, rigidbody: RigidBody) -> usize {
-        self.world.add_rigidbody(rigidbody)
+        self.world.add_body(rigidbody)
     }
 
     pub fn add_collider(&mut self, collider: Collider, rigidbody_handle: usize) {
-        self.world.add_collider(collider, rigidbody_handle);
+        self.world.set_body_collider(rigidbody_handle, collider);
     }
 }
 

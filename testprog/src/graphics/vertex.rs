@@ -1,17 +1,15 @@
 use glam::{Vec2, Vec3, Vec4};
 use vulkano::buffer::BufferContents;
-use vulkano::pipeline::graphics::vertex_input::Vertex;
+use vulkano::impl_vertex;
 
-#[derive(Debug, Clone, Copy, BufferContents, Vertex)]
+#[derive(Clone, Copy, Debug, Default, BufferContents)]
 #[repr(C)]
 pub struct UiVertex {
-    #[location(0)]
-    position: [f32; 2],
-    #[location(1)]
-    uv: [f32; 2],
-    #[location(2)]
-    color: [f32; 4],
+    pub position: [f32; 2],
+    pub uv: [f32; 2],
+    pub color: [f32; 4],
 }
+impl_vertex!(UiVertex, position, uv, color);
 
 impl UiVertex {
     pub fn new(position: Vec2, uv: Vec2, color: Vec4) -> Self {
@@ -23,16 +21,14 @@ impl UiVertex {
     }
 }
 
-#[derive(Debug, Clone, Copy, BufferContents, Vertex)]
+#[derive(Clone, Copy, Debug, Default, BufferContents)]
 #[repr(C)]
 pub struct MeshVertex {
-    #[location(0)]
-    position: [f32; 3],
-    #[location(1)]
-    normal: [f32; 3],
-    #[location(2)]
-    uv: [f32; 2],
+    pub position: [f32; 3],
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
+impl_vertex!(MeshVertex, position, normal, uv);
 
 impl MeshVertex {
     pub fn new(position: Vec3, normal: Vec3, uv: Vec2) -> Self {
@@ -44,14 +40,13 @@ impl MeshVertex {
     }
 }
 
-#[derive(Debug, Clone, Copy, BufferContents, Vertex)]
+#[derive(Clone, Copy, Debug, Default, BufferContents)]
 #[repr(C)]
 pub struct SpriteVertex {
-    #[location(0)]
-    position: [f32; 2],
-    #[location(1)]
-    uv: [f32; 2],
+    pub position: [f32; 2],
+    pub uv: [f32; 2],
 }
+impl_vertex!(SpriteVertex, position, uv);
 
 impl SpriteVertex {
     pub fn new(position: Vec2, uv: Vec2) -> Self {

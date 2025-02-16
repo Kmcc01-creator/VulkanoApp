@@ -1,59 +1,67 @@
-use crate::core::Error;
 use std::sync::Arc;
-use vulkano::shader::{ShaderModule as VulkanShaderModule, ShaderStages};
+use vulkano::device::Device;
+use vulkano::shader::{ShaderCreateInfo, ShaderModule as VkShaderModule};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use crate::core::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShaderType {
     Vertex,
     Fragment,
-    Compute,
-}
-
-impl ShaderType {
-    pub fn to_shader_stage(&self) -> ShaderStages {
-        match self {
-            ShaderType::Vertex => ShaderStages::VERTEX,
-            ShaderType::Fragment => ShaderStages::FRAGMENT,
-            ShaderType::Compute => ShaderStages::COMPUTE,
-        }
-    }
 }
 
 pub struct ShaderModule {
-    module: Arc<VulkanShaderModule>,
-    entry_point: String,
-    shader_type: ShaderType,
+    module: Arc<VkShaderModule>,
 }
 
 impl ShaderModule {
-    pub fn new(
-        module: Arc<VulkanShaderModule>,
-        entry_point: impl Into<String>,
-        shader_type: ShaderType,
-    ) -> Self {
-        Self {
-            module,
-            entry_point: entry_point.into(),
-            shader_type,
-        }
-    }
+    pub fn new(device: Arc<Device>, code: &[u32], ty: ShaderType) -> Result<Self, Error> {
+        let stage = match ty {
+            ShaderType::Vertex => vulkano::shader::ShaderStage::Vertex,
+            ShaderType::Fragment => vulkano::shader::ShaderStage::Fragment,
+        };
 
-    pub fn entry_point_info(&self) -> Result<EntryPointInfo, Error> {
-        self.module.entry_point(&self.entry_point).ok_or_else(|| {
-            Error::GraphicsInitialization("Shader entry point not found".to_string())
+        let module = unsafe {
+            VkShaderModule::new(
+                device,
+                ShaderCreateInfo {
+                    code: code.into(),
+                    ..Default::default()
+                },
+            )
+        }
+        .map_err(|e| {
+            Error::GraphicsInitialization(format!("Failed to create shader module: {}", e))
+        })?;
+
+        Ok(Self {
+            module: Arc::new(module),
         })
     }
 
-    pub fn module(&self) -> &Arc<VulkanShaderModule> {
-        &self.module
-    }
-
-    pub fn shader_stage(&self) -> ShaderStages {
-        self.shader_type.to_shader_stage()
+    pub fn as_ref(&self) -> Arc<VkShaderModule> {
+        self.module.clone()
     }
 }
 
-pub struct EntryPointInfo {
-    pub name: String,
-    pub stage: ShaderStages,
+// Helper macro for loading SPIR-V shaders
+#[macro_export]
+macro_rules! load_shader {
+    ($device:expr, $path:expr, $ty:expr) => {{
+        let code = std::fs::read($path).map_err(|e| {
+            Error::GraphicsInitialization(format!("Failed to read shader file {}: {}", $path, e))
+        })?;
+        let code = Vec::from(code);
+        let code = if code.len() % 4 == 0 {
+            unsafe {
+                Vec::from_raw_parts(code.as_ptr() as *mut u32, code.len() / 4, code.capacity())
+            }
+        } else {
+            return Err(Error::GraphicsInitialization(format!(
+                "Shader file {} size is not a multiple of 4",
+                $path
+            )));
+        };
+        ShaderModule::new($device, &code, $ty)
+    }};
 }

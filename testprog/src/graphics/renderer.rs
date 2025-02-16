@@ -1,135 +1,69 @@
 use std::sync::Arc;
 use vulkano::command_buffer::{
     allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-    PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo,
+    PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents, SubpassEndInfo,
 };
 use vulkano::device::Queue;
-use vulkano::image::view::{ImageView, ImageViewCreateInfo};
-use vulkano::image::ImageAccess;
+use vulkano::format::Format;
+use vulkano::image::view::ImageView;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain::{
-    self, acquire_next_image, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-    SwapchainImage, SwapchainPresentInfo,
-};
-use vulkano::sync::semaphore::{Semaphore, SemaphoreCreateInfo};
-use vulkano::sync::{self, future::GpuFuture};
+use vulkano::sync::{self, GpuFuture};
 
+use super::swapchain::SwapchainContext;
 use super::vertex::{Vertex2D, Vertex3D};
 use super::RenderPipeline;
 use crate::core::Error;
 
-type CommandBuilder = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
-
 const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-struct FrameSync {
-    image_available: Arc<Semaphore>,
-    render_finished: Arc<Semaphore>,
-}
-
-pub struct Renderer {
+pub struct RenderContext {
     render_pass: Arc<RenderPass>,
     graphics_queue: Arc<Queue>,
-    swapchain: Arc<Swapchain>,
-    swapchain_images: Vec<Arc<SwapchainImageView>>,
+    swapchain: SwapchainContext,
     framebuffers: Vec<Arc<Framebuffer>>,
-    frame_sync: Vec<FrameSync>,
+    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    current_command_buffer: Option<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>>,
+    previous_frame_end: Option<Box<dyn GpuFuture>>,
     current_frame: usize,
     current_image: u32,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    current_command_buffer: Option<CommandBuilder>,
-    previous_frame_end: Option<Box<dyn GpuFuture>>,
 }
 
-impl Renderer {
+impl RenderContext {
     pub fn new(
         render_pass: Arc<RenderPass>,
         graphics_queue: Arc<Queue>,
-        swapchain: Arc<Swapchain>,
+        swapchain: SwapchainContext,
     ) -> Result<Self, Error> {
-        // Create command buffer allocator
         let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
             graphics_queue.device().clone(),
             Default::default(),
         ));
 
-        // Get swapchain images and create image views
-        let swapchain_images = swapchain
-            .create_image_views(|image| {
-                ImageView::new(image.clone(), ImageView::default_2d_view_info())
-                    .map_err(|e| Error::GraphicsInitialization(e.to_string()))
-            })
-            .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
-
-        // Create framebuffers for each image view
-        let framebuffers = swapchain_images
-            .iter()
-            .map(|view| {
-                Framebuffer::new(
-                    render_pass.clone(),
-                    FramebufferCreateInfo {
-                        attachments: vec![view.clone()],
-                        ..Default::default()
-                    },
-                )
-                .map_err(|e| Error::GraphicsInitialization(e.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Create synchronization primitives
-        let frame_sync = (0..MAX_FRAMES_IN_FLIGHT)
-            .map(|_| {
-                let image_available = Semaphore::new(
-                    graphics_queue.device().clone(),
-                    SemaphoreCreateInfo::default(),
-                )
-                .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
-
-                let render_finished = Semaphore::new(
-                    graphics_queue.device().clone(),
-                    SemaphoreCreateInfo::default(),
-                )
-                .map_err(|e| Error::GraphicsInitialization(e.to_string()))?;
-
-                Ok(FrameSync {
-                    image_available: Arc::new(image_available),
-                    render_finished: Arc::new(render_finished),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let framebuffers = create_framebuffers(&swapchain, &render_pass)?;
 
         Ok(Self {
             render_pass,
             graphics_queue,
             swapchain,
-            swapchain_images,
             framebuffers,
-            frame_sync,
-            current_frame: 0,
-            current_image: 0,
             command_buffer_allocator,
             current_command_buffer: None,
             previous_frame_end: Some(sync::now(graphics_queue.device().clone()).boxed()),
+            current_frame: 0,
+            current_image: 0,
         })
     }
 
-    pub fn begin_frame(
-        &mut self,
-    ) -> Result<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, Error> {
-        // Wait for the previous frame to finish
-        if let Some(future) = self.previous_frame_end.take() {
+    pub fn begin_frame(&mut self) -> Result<(), Error> {
+        // Wait for previous frame
+        if let Some(future) = self.previous_frame_end.as_mut() {
             future.cleanup_finished();
         }
 
-        // Get the next image
-        let (image_index, suboptimal, acquire_future) =
-            match acquire_next_image(self.swapchain.clone(), None) {
-                Ok((i, s)) => (
-                    i,
-                    s,
-                    sync::now(self.graphics_queue.device().clone()).boxed(),
-                ),
+        let (image_index, suboptimal, mut acquire_future) =
+            match self.swapchain.acquire_next_image(None) {
+                Ok((index, suboptimal, future)) => (index, suboptimal, future),
                 Err(e) => {
                     return Err(Error::RenderError(format!(
                         "Failed to acquire next image: {}",
@@ -144,16 +78,14 @@ impl Renderer {
 
         self.current_image = image_index;
 
-        // Create command buffer
-        let mut builder = AutoCommandBufferBuilder::primary(
+        let mut command_buffer = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
             self.graphics_queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
         .map_err(|e| Error::RenderError(format!("Failed to create command buffer: {}", e)))?;
 
-        // Begin render pass
-        builder
+        command_buffer
             .begin_render_pass(
                 RenderPassBeginInfo {
                     clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into())],
@@ -161,71 +93,84 @@ impl Renderer {
                         self.framebuffers[image_index as usize].clone(),
                     )
                 },
-                SubpassBeginInfo::default(),
+                SubpassContents::Inline,
             )
             .map_err(|e| Error::RenderError(format!("Failed to begin render pass: {}", e)))?;
 
-        self.current_command_buffer = Some(builder.clone());
-        Ok(builder)
+        self.current_command_buffer = Some(command_buffer);
+        Ok(())
     }
 
     pub fn end_frame(&mut self) -> Result<(), Error> {
-        // End the render pass
-        let mut builder = self
+        let mut command_buffer = self
             .current_command_buffer
             .take()
             .ok_or_else(|| Error::RenderError("No command buffer to submit".to_string()))?;
 
-        builder
-            .end_render_pass(Default::default())
+        command_buffer
+            .end_render_pass(SubpassEndInfo::default())
             .map_err(|e| Error::RenderError(format!("Failed to end render pass: {}", e)))?;
 
-        let command_buffer = builder
+        let command_buffer = command_buffer
             .build()
             .map_err(|e| Error::RenderError(format!("Failed to build command buffer: {}", e)))?;
 
-        // Submit and present
-        let execute_future = self
+        let previous_future = self
             .previous_frame_end
             .take()
-            .unwrap_or_else(|| sync::now(self.graphics_queue.device().clone()).boxed())
+            .unwrap_or_else(|| sync::now(self.graphics_queue.device().clone()).boxed());
+
+        let future = previous_future
             .then_execute(self.graphics_queue.clone(), command_buffer)
             .map_err(|e| Error::RenderError(format!("Failed to execute command buffer: {}", e)))?
             .then_swapchain_present(
                 self.graphics_queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(
-                    self.swapchain.clone(),
-                    self.current_image,
-                ),
-            );
+                self.swapchain.present_info(self.current_image),
+            )
+            .then_signal_fence_and_flush()
+            .map_err(|e| Error::RenderError(format!("Failed to flush future: {}", e)))?;
 
-        self.previous_frame_end = Some(execute_future.boxed());
+        self.previous_frame_end = Some(Box::new(future));
         self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 
         Ok(())
     }
 
-    pub fn draw_mesh(
-        &self,
-        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        pipeline: &RenderPipeline,
-        vertices: &[Vertex3D],
-        indices: &[u32],
-    ) -> Result<(), Error> {
-        Err(Error::RenderError(
-            "Mesh drawing not yet implemented".into(),
-        ))
-    }
-
-    pub fn update_viewport(&mut self, width: u32, height: u32) -> Result<(), Error> {
-        Err(Error::RenderError(
-            "Viewport update not yet implemented".into(),
-        ))
-    }
-
     pub fn recreate_swapchain(&mut self) -> Result<(), Error> {
-        Err(Error::RenderError(
-            "Swapchain recreation not yet implemented".into(),
-        ))
+        self.swapchain.recreate()?;
+        self.framebuffers = create_framebuffers(&self.swapchain, &self.render_pass)?;
+        Ok(())
     }
+
+    pub fn current_command_buffer(
+        &mut self,
+    ) -> Option<&mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>> {
+        self.current_command_buffer.as_mut()
+    }
+}
+
+fn create_framebuffers(
+    swapchain: &SwapchainContext,
+    render_pass: &Arc<RenderPass>,
+) -> Result<Vec<Arc<Framebuffer>>, Error> {
+    swapchain
+        .images()
+        .iter()
+        .map(|image| {
+            let view = ImageView::new_default(image.clone()).map_err(|e| {
+                Error::GraphicsInitialization(format!("Failed to create image view: {}", e))
+            })?;
+
+            Framebuffer::new(
+                render_pass.clone(),
+                FramebufferCreateInfo {
+                    attachments: vec![view],
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| {
+                Error::GraphicsInitialization(format!("Failed to create framebuffer: {}", e))
+            })
+        })
+        .collect()
 }

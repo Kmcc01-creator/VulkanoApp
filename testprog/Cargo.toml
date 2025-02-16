@@ -9,3 +9,5 @@ vulkano-shaders = "0.34"
 winit = "0.28"
 glam = "0.24"
 bytemuck = { version = "1.14", features = ["derive"] }
+smallvec = "1.11"
+ahash = "0.8"

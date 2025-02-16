@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::asset::Asset;
 
 pub struct AssetCache {
-    assets: HashMap<PathBuf, Box<dyn Asset>>,
+    assets: HashMap<PathBuf, Arc<dyn Asset>>,
 }
 
 impl AssetCache {
@@ -14,26 +15,27 @@ impl AssetCache {
         }
     }
 
-    pub fn insert<T>(&mut self, path: PathBuf, asset: T) -> Box<dyn Asset>
+    pub fn insert<T>(&mut self, path: PathBuf, asset: T) -> Arc<T>
     where
         T: Asset + 'static,
     {
-        let boxed = Box::new(asset) as Box<dyn Asset>;
-        self.assets.insert(path, boxed.clone());
-        boxed
+        let arc = Arc::new(asset);
+        self.assets.insert(path, arc.clone() as Arc<dyn Asset>);
+        arc
     }
 
-    pub fn get<T: Asset + 'static>(&self, path: &Path) -> Option<Box<T>> {
+    pub fn get<T: Asset + 'static>(&self, path: &Path) -> Option<Arc<T>> {
         self.assets.get(path).and_then(|asset| {
-            asset
-                .as_any()
-                .downcast_ref::<T>()
-                .map(|a| Box::new(a.clone()))
+            asset.as_any().downcast_ref::<T>().map(|_| {
+                // Since we know the type matches, we can safely clone the Arc
+                // and downcast it
+                Arc::downcast::<T>(asset.clone()).expect("Downcast failed after type check")
+            })
         })
     }
 
-    pub fn get_raw(&self, path: &Path) -> Option<Box<dyn Asset>> {
-        self.assets.get(path).map(|asset| asset.clone())
+    pub fn get_raw(&self, path: &Path) -> Option<Arc<dyn Asset>> {
+        self.assets.get(path).map(Arc::clone)
     }
 
     pub fn remove(&mut self, path: &Path) -> bool {

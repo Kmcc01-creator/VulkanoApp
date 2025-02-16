@@ -18,7 +18,7 @@ pub struct DeviceContext {
 
 impl DeviceContext {
     pub fn new(window: &Window) -> Result<Self, Error> {
-        // Create instance with required extensions
+        // Create instance with required extensions and validation layers
         let library = vulkano::VulkanLibrary::new().map_err(|e| {
             Error::GraphicsInitialization(format!("Failed to load Vulkan library: {}", e))
         })?;
@@ -29,6 +29,7 @@ impl DeviceContext {
             InstanceCreateInfo {
                 flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
                 enabled_extensions: required_extensions,
+                layers: vec!["VK_LAYER_KHRONOS_validation".into()],
                 ..Default::default()
             },
         )

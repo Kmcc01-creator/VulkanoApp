@@ -1,9 +1,10 @@
 use super::error::Error;
 use super::input::InputState;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use winit::event::{ElementState, Event, WindowEvent};
-use winit::event_loop::{EventLoop, EventLoopBuilder};
+use winit::event::{ElementState, Event, MouseButton, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop, EventLoopBuilder};
 use winit::window::Window as WinitWindow;
 
 #[derive(Debug)]
@@ -12,6 +13,8 @@ enum WindowMessage {
     Move(i32, i32),
     Focus(bool),
     Close,
+    MouseInput(MouseButton, ElementState),
+    CursorMoved(PhysicalPosition<f64>),
 }
 
 struct WindowState {
@@ -21,7 +24,7 @@ struct WindowState {
 }
 
 pub struct Window {
-    window: WinitWindow,
+    window: Arc<WinitWindow>,
     event_loop: Option<EventLoop<()>>,
     state: WindowState,
     input: InputState,
@@ -32,20 +35,16 @@ pub struct Window {
 
 impl Window {
     pub fn new() -> Result<Self, Error> {
-        // Create event loop using builder pattern
-        let event_loop = EventLoopBuilder::new()
-            .build()
-            .map_err(|e| Error::WindowCreation(e.to_string()))?;
+        let event_loop = EventLoopBuilder::new().build();
 
-        // Create window
-        let window =
-            WinitWindow::new(&event_loop).map_err(|e| Error::WindowCreation(e.to_string()))?;
+        let window = Arc::new(
+            winit::window::WindowBuilder::new()
+                .with_title("Game Engine")
+                .with_inner_size(LogicalSize::new(800, 600))
+                .build(&event_loop)
+                .map_err(|e| Error::WindowCreation(e.to_string()))?,
+        );
 
-        // Configure window
-        window.set_title("Game Engine");
-        window.set_inner_size(LogicalSize::new(800, 600));
-
-        // Center window
         if let Some(monitor) = window.current_monitor() {
             let monitor_size = monitor.size();
             let window_size = window.outer_size();
@@ -75,54 +74,49 @@ impl Window {
 
     pub fn run_event_loop<F>(&mut self, mut callback: F) -> Result<(), Error>
     where
-        F: FnMut(&mut Self),
+        F: FnMut(&mut Self) + 'static,
     {
         let event_loop = self
             .event_loop
             .take()
             .ok_or_else(|| Error::WindowCreation("Event loop already taken".into()))?;
 
-        let result = event_loop.run(|event, target| match event {
-            Event::WindowEvent { event, .. } => match event {
-                WindowEvent::CloseRequested => {
-                    self.should_close = true;
-                    target.exit();
-                }
-                WindowEvent::Resized(size) => {
-                    self.state.size = (size.width, size.height);
-                    let _ = self
-                        .message_sender
-                        .send(WindowMessage::Resize(size.width, size.height));
-                }
-                WindowEvent::Moved(position) => {
-                    self.state.position = (position.x, position.y);
-                    let _ = self
-                        .message_sender
-                        .send(WindowMessage::Move(position.x, position.y));
-                }
-                WindowEvent::Focused(focused) => {
-                    self.state.focused = focused;
-                    let _ = self.message_sender.send(WindowMessage::Focus(focused));
-                }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    self.input.update_mouse_button(button, state);
-                }
-                WindowEvent::CursorMoved { position, .. } => {
-                    self.input.update_mouse_position(position);
+        let sender = self.message_sender.clone();
+
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Poll;
+
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::CloseRequested => {
+                        let _ = sender.send(WindowMessage::Close);
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    WindowEvent::Resized(size) => {
+                        let _ = sender.send(WindowMessage::Resize(size.width, size.height));
+                    }
+                    WindowEvent::Moved(position) => {
+                        let _ = sender.send(WindowMessage::Move(position.x, position.y));
+                    }
+                    WindowEvent::Focused(focused) => {
+                        let _ = sender.send(WindowMessage::Focus(focused));
+                    }
+                    WindowEvent::MouseInput { state, button, .. } => {
+                        let _ = sender.send(WindowMessage::MouseInput(button, state));
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let _ = sender.send(WindowMessage::CursorMoved(position));
+                    }
+                    _ => (),
+                },
+                Event::MainEventsCleared => {
+                    // Nothing needed here since we'll process messages in handle_events
                 }
                 _ => (),
-            },
-            Event::AboutToWait => {
-                callback(self);
-
-                if self.should_close {
-                    target.exit();
-                }
             }
-            _ => (),
         });
 
-        result.map_err(|e| Error::WindowCreation(e.to_string()))
+        Ok(())
     }
 
     pub fn handle_events(&mut self) -> Result<(), Error> {
@@ -139,6 +133,12 @@ impl Window {
                 }
                 WindowMessage::Close => {
                     self.should_close = true;
+                }
+                WindowMessage::MouseInput(button, state) => {
+                    self.input.update_mouse_button(button, state);
+                }
+                WindowMessage::CursorMoved(position) => {
+                    self.input.update_mouse_position(position);
                 }
             }
         }
@@ -163,8 +163,8 @@ impl Window {
         resized
     }
 
-    pub fn raw_window_handle(&self) -> &WinitWindow {
-        &self.window
+    pub fn raw_window_handle(&self) -> Arc<WinitWindow> {
+        self.window.clone()
     }
 
     pub fn input(&self) -> &InputState {
@@ -177,8 +177,7 @@ impl Window {
             .as_ref()
             .ok_or_else(|| Error::WindowCreation("Event loop not available".into()))?;
 
-        vulkano::swapchain::Surface::required_extensions(event_loop)
-            .map_err(|e| Error::WindowCreation(format!("Failed to get required extensions: {}", e)))
+        Ok(vulkano::swapchain::Surface::required_extensions(event_loop))
     }
 
     pub fn create_surface(

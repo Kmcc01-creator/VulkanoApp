@@ -1,5 +1,5 @@
 mod pipeline;
-mod renderer;
+pub mod renderer;
 mod shader;
 mod swapchain;
 mod vertex;
@@ -10,31 +10,40 @@ pub use vertex::{MeshVertex, SpriteVertex, UiVertex};
 
 use crate::core::error::Error;
 use std::sync::Arc;
-use vulkano::device::physical::{PhysicalDevice, QueueFamily};
+use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::DeviceExtensions;
-use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo};
-use vulkano::format::Format;
+use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo, QueueFlags};
 use vulkano::image::Image;
 use vulkano::image::ImageUsage;
-use vulkano::instance::Surface;
-use vulkano::swapchain::CompositeAlpha;
-use vulkano::swapchain::{Surface as SwapchainSurface, Swapchain, SwapchainCreateInfo};
+use vulkano::swapchain::{
+    CompositeAlpha, Surface, Surface as SwapchainSurface, Swapchain, SwapchainCreateInfo,
+};
 
 pub fn create_logical_device(
     physical_device: Arc<PhysicalDevice>,
-    surface: Arc<SwapchainSurface>,
+    surface: Arc<Surface>,
 ) -> Result<(Arc<Device>, impl ExactSizeIterator<Item = Arc<Queue>>), Error> {
-    let queue_family = physical_device
-        .queue_families()
-        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
+    let queue_family_index = physical_device
+        .queue_family_properties()
+        .iter()
+        .enumerate()
+        .position(|(i, queue_family)| {
+            queue_family.queue_flags.intersects(QueueFlags::GRAPHICS)
+                && physical_device
+                    .surface_support(i as u32, &surface)
+                    .unwrap_or(false)
+        })
         .ok_or_else(|| {
             Error::GraphicsInitialization("No suitable queue family found".to_string())
-        })?;
+        })? as u32;
 
     let (device, queues) = Device::new(
-        physical_device,
+        physical_device.clone(),
         DeviceCreateInfo {
-            queue_create_infos: vec![QueueCreateInfo::family(queue_family)],
+            queue_create_infos: vec![QueueCreateInfo {
+                queue_family_index,
+                ..Default::default()
+            }],
             enabled_extensions: DeviceExtensions {
                 khr_swapchain: true,
                 ..DeviceExtensions::empty()
@@ -49,38 +58,42 @@ pub fn create_logical_device(
 
 pub fn create_swapchain(
     device: Arc<Device>,
-    surface: Arc<SwapchainSurface>,
+    surface: Arc<Surface>,
     window_size: [u32; 2],
 ) -> Result<(Arc<Swapchain>, Vec<Arc<Image>>), Error> {
-    let capabilities = surface
-        .capabilities(device.physical_device())
+    let capabilities = device
+        .physical_device()
+        .surface_capabilities(&surface, Default::default())
         .map_err(|e| {
             Error::GraphicsInitialization(format!("Failed to get surface capabilities: {}", e))
         })?;
 
+    // Use the first available composite alpha mode from the capabilities
     let composite_alpha = capabilities
         .supported_composite_alpha
-        .iter()
+        .into_iter()
         .next()
-        .unwrap();
+        .ok_or_else(|| {
+            Error::GraphicsInitialization("No composite alpha mode available".to_string())
+        })?;
 
-    let format = surface
-        .formats(device.physical_device())
+    let surface_format = *device
+        .physical_device()
+        .surface_formats(&surface, Default::default())
         .map_err(|e| {
             Error::GraphicsInitialization(format!("Failed to get surface formats: {}", e))
         })?
-        .into_iter()
+        .iter()
         .next()
-        .ok_or_else(|| Error::GraphicsInitialization("No surface formats available".to_string()))?
-        .0;
+        .ok_or_else(|| Error::GraphicsInitialization("No surface formats available".to_string()))?;
 
     let (swapchain, images) = Swapchain::new(
-        device,
+        device.clone(),
         surface,
         SwapchainCreateInfo {
             min_image_count: capabilities.min_image_count + 1,
-            image_format: format,
-            image_extent: window_size,
+            image_format: surface_format.0,
+            image_extent: window_size.into(),
             image_usage: ImageUsage::COLOR_ATTACHMENT,
             composite_alpha,
             ..Default::default()

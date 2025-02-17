@@ -3,7 +3,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::ElementState;
 use winit::event::MouseButton;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct InputState {
     mouse_button_state: HashMap<MouseButton, bool>,
     mouse_position: PhysicalPosition<f64>,

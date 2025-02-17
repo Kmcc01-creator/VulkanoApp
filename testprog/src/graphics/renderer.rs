@@ -7,7 +7,7 @@ use vulkano::command_buffer::{
 use vulkano::device::Queue;
 use vulkano::image::view::ImageView;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain;
+use vulkano::swapchain::{self, PresentMode, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture};
 
 use super::swapchain::SwapchainContext;
@@ -21,7 +21,7 @@ pub struct RenderContext {
     graphics_queue: Arc<Queue>,
     swapchain: SwapchainContext,
     framebuffers: Vec<Arc<Framebuffer>>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
+    command_buffer_allocator: StandardCommandBufferAllocator,
     current_command_buffer: Option<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     current_frame: usize,
@@ -53,10 +53,10 @@ impl Default for Camera {
 
 impl RenderContext {
     pub fn new(graphics_queue: Arc<Queue>, swapchain: SwapchainContext) -> Result<Self, Error> {
-        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(
             graphics_queue.device().clone(),
             Default::default(),
-        ));
+        );
 
         let render_pass = vulkano::single_pass_renderpass!(
             graphics_queue.device().clone(),
@@ -87,7 +87,7 @@ impl RenderContext {
 
         Ok(Self {
             render_pass,
-            graphics_queue,
+            graphics_queue: graphics_queue.clone(),
             swapchain,
             framebuffers,
             command_buffer_allocator,
@@ -179,16 +179,16 @@ impl RenderContext {
 
         self.current_image = image_index;
 
-        let mut command_buffer = AutoCommandBufferBuilder::primary(
+        let clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1.0.into())];
+
+        let builder = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
             self.graphics_queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
         .map_err(|e| Error::RenderError(format!("Failed to create command buffer: {}", e)))?;
 
-        let clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1.0.into())];
-
-        command_buffer
+        let builder = builder
             .begin_render_pass(
                 RenderPassBeginInfo {
                     clear_values,
@@ -203,7 +203,7 @@ impl RenderContext {
             )
             .map_err(|e| Error::RenderError(format!("Failed to begin render pass: {}", e)))?;
 
-        self.current_command_buffer = Some(command_buffer);
+        self.current_command_buffer = Some(builder);
         Ok(())
     }
 
@@ -226,15 +226,13 @@ impl RenderContext {
             .take()
             .unwrap_or_else(|| sync::now(self.graphics_queue.device().clone()).boxed());
 
+        let info =
+            SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), self.current_image);
+
         let future = previous_future
             .then_execute(self.graphics_queue.clone(), command_buffer)
             .map_err(|e| Error::RenderError(format!("Failed to execute command buffer: {}", e)))?
-            .then_swapchain_present(
-                self.graphics_queue.clone(),
-                self.swapchain.clone(),
-                self.current_image,
-            )
-            .map_err(|e| Error::RenderError(format!("Failed to present swapchain: {}", e)))?
+            .then_swapchain_present(self.graphics_queue.clone(), info)
             .then_signal_fence_and_flush()
             .map_err(|e| Error::RenderError(format!("Failed to flush future: {}", e)))?;
 
@@ -264,15 +262,11 @@ fn create_framebuffers(
     swapchain
         .image_views()
         .iter()
-        .map(|image| {
-            let view = ImageView::new_default(image.clone()).map_err(|e| {
-                Error::GraphicsInitialization(format!("Failed to create image view: {}", e))
-            })?;
-
+        .map(|view| {
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![view],
+                    attachments: vec![view.clone()],
                     ..Default::default()
                 },
             )

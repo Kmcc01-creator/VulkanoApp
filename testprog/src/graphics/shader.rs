@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::shader::{ShaderCreateInfo, ShaderModule as VkShaderModule};
+use vulkano::shader::{ShaderModule, ShaderStages};
 
 use crate::core::Error;
 
@@ -10,37 +10,29 @@ pub enum ShaderType {
     Fragment,
 }
 
-pub struct ShaderModule {
-    module: Arc<VkShaderModule>,
+pub struct Shader {
+    module: Arc<ShaderModule>,
 }
 
-impl ShaderModule {
+impl Shader {
     pub fn new(device: Arc<Device>, code: &[u32], ty: ShaderType) -> Result<Self, Error> {
         let stage = match ty {
-            ShaderType::Vertex => vulkano::shader::ShaderStage::Vertex,
-            ShaderType::Fragment => vulkano::shader::ShaderStage::Fragment,
+            ShaderType::Vertex => ShaderStages::VERTEX,
+            ShaderType::Fragment => ShaderStages::FRAGMENT,
         };
 
+        let bytes = bytemuck::cast_slice(code);
         let module = unsafe {
-            VkShaderModule::new(
-                device,
-                ShaderCreateInfo {
-                    code: code.into(),
-                    ..Default::default()
-                },
-            )
-        }
-        .map_err(|e| {
-            Error::GraphicsInitialization(format!("Failed to create shader module: {}", e))
-        })?;
+            ShaderModule::from_bytes(device, bytes).map_err(|e| {
+                Error::GraphicsInitialization(format!("Failed to create shader module: {}", e))
+            })?
+        };
 
-        Ok(Self {
-            module: Arc::new(module),
-        })
+        Ok(Self { module })
     }
 
-    pub fn as_ref(&self) -> Arc<VkShaderModule> {
-        self.module.clone()
+    pub fn as_ref(&self) -> &Arc<ShaderModule> {
+        &self.module
     }
 }
 
@@ -51,17 +43,18 @@ macro_rules! load_shader {
         let code = std::fs::read($path).map_err(|e| {
             Error::GraphicsInitialization(format!("Failed to read shader file {}: {}", $path, e))
         })?;
-        let code = Vec::from(code);
-        let code = if code.len() % 4 == 0 {
-            unsafe {
-                Vec::from_raw_parts(code.as_ptr() as *mut u32, code.len() / 4, code.capacity())
-            }
-        } else {
+
+        if code.len() % 4 != 0 {
             return Err(Error::GraphicsInitialization(format!(
                 "Shader file {} size is not a multiple of 4",
                 $path
             )));
-        };
-        ShaderModule::new($device, &code, $ty)
+        }
+
+        // Convert the bytes to u32 slice
+        let words =
+            unsafe { std::slice::from_raw_parts(code.as_ptr() as *const u32, code.len() / 4) };
+
+        Shader::new($device, words, $ty)
     }};
 }

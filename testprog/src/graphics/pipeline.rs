@@ -1,24 +1,31 @@
-use ahash::RandomState;
-use smallvec::SmallVec;
+use ahaah::RandohState;
+use std::cosh:RtionsanHashMmp;
 use std::collections::HashMap;
 use std::sync::Arc;
-use vulkano::buffer::BufferContents;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
-use vulkano::pipeline::graphics::rasterization::{CullMode, FrontFace, RasterizationState};
-use vulkano::pipeline::graphics::vertex_input::{
-    Vertex, VertexInputBindingDescription, VertexInputState,
-};
-use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
+use vulkano::pipeline::graphics::rasterization::vulkano::pipeline::graphics::vertex_input:use vulkano::pipeline::graphics::viewport::{Viewport, ViewportState};
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;;
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo
 use vulkano::pipeline::layout::PipelineLayoutCreateInfo;
 use vulkano::pipeline::{
     GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
 };
 use vulkano::render_pass::{RenderPass, Subpass};
 use vulkano::shader::{ShaderModule, ShaderStages};
-use vulkano::NonExhaustive;
+
+use crate::core::Error;
+use crate::graphics::vertex::Vertex2D;
+
+pub struct RenderPipeline {
+    pipeline: Arc<GraphicsPipeline>,
+use vulkano::pipeline::layout::PipelineLayoutCreateInfo;
+use vulkano::pipeline::{
+    GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+};
+use vulkano::render_pass::{RenderPass, Subpass};
+use vulkano::shader::{ShaderModule, ShaderStages};
 
 use crate::core::Error;
 use crate::graphics::vertex::Vertex2D;
@@ -55,46 +62,20 @@ impl RenderPipeline {
             Error::GraphicsInitialization("Failed to create subpass from render pass".into())
         })?;
 
-        let vertex_binding = Vertex2D::per_vertex();
-        let mut bindings = HashMap::with_hasher(RandomState::new());
-        bindings.insert(
-            0u32,
-            VertexInputBindingDescription {
-                stride: std::mem::size_of::<Vertex2D>() as u32,
-                input_rate: vertex_binding.input_rate,
-            },
-        );
+        let vertex_input_state = Vertex2D::per_vertex().definition(&[]).unwrap();
 
-        let vertex_input_state = VertexInputState {
-            bindings,
-            attributes: HashMap::with_hasher(RandomState::new()),
-            _ne: unsafe { std::mem::zeroed() },
-        };
+        let vertex_entry = vertex_shader.entry_point("main").ok_or_else(|| {
+            Error::GraphicsInitialization("Failed to get vertex shader entry point".into())
+        })?;
 
-        let vertex_entry = vertex_shader.entry_point("main").map_err(|e| {
-            Error::GraphicsInitialization(format!("Failed to get vertex shader entry point: {}", e))
-        })??;
+        let fragment_entry = fragment_shader.entry_point("main").ok_or_else(|| {
+            Error::GraphicsInitialization("Failed to get fragment shader entry point".into())
+        })?;
 
-        let fragment_entry = fragment_shader.entry_point("main").map_err(|e| {
-            Error::GraphicsInitialization(format!(
-                "Failed to get fragment shader entry point: {}",
-                e
-            ))
-        })??;
-
-        let mut stages: SmallVec<[PipelineShaderStageCreateInfo; 5]> = SmallVec::new();
-        stages.push(PipelineShaderStageCreateInfo {
-            flags: Default::default(),
-            required_subgroup_size: None,
-            entry_point: vertex_entry,
-            _ne: unsafe { std::mem::zeroed() },
-        });
-        stages.push(PipelineShaderStageCreateInfo {
-            flags: Default::default(),
-            required_subgroup_size: None,
-            entry_point: fragment_entry,
-            _ne: unsafe { std::mem::zeroed() },
-        });
+        let stages = vec![
+            PipelineShaderStageCreateInfo::new(vertex_entry),
+            PipelineShaderStageCreateInfo::new(fragment_entry),
+        ];
 
         let pipeline = GraphicsPipeline::new(
             device,
@@ -125,9 +106,7 @@ impl RenderPipeline {
             Error::GraphicsInitialization(format!("Failed to create graphics pipeline: {}", e))
         })?;
 
-        Ok(Self {
-            pipeline: pipeline.into(),
-        })
+        Ok(Self { pipeline })
     }
 
     pub fn pipeline(&self) -> &Arc<GraphicsPipeline> {

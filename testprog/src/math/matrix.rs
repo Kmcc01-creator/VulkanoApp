@@ -86,7 +86,13 @@ impl Add for Mat2 {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        self.add(&other)
+        let mut result = [[0.0; 2]; 2];
+        for i in 0..2 {
+            for j in 0..2 {
+                result[i][j] = self.data[i][j] + other.data[i][j];
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -220,7 +226,13 @@ impl Add for Mat3 {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        self.add(&other)
+        let mut result = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                result[i][j] = self.data[i][j] + other.data[i][j];
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -228,7 +240,13 @@ impl Sub for Mat3 {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        self.subtract(&other)
+        let mut result = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                result[i][j] = self.data[i][j] - other.data[i][j];
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -243,7 +261,15 @@ impl Mul<f32> for Mat3 {
 impl Mul for Mat3 {
     type Output = Self;
     fn mul(self, other: Self) -> Self {
-        self.multiply(&other)
+        let mut result = [[0.0; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                for k in 0..3 {
+                    result[i][j] += self.data[i][k] * other.data[k][j];
+                }
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -365,7 +391,13 @@ impl Add for Mat4 {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        self.add(&other)
+        let mut result = [[0.0; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                result[i][j] = self.data[i][j] + other.data[i][j];
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -373,7 +405,13 @@ impl Sub for Mat4 {
     type Output = Self;
 
     fn sub(self, other: Self) -> Self {
-        self.subtract(&other)
+        let mut result = [[0.0; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                result[i][j] = self.data[i][j] - other.data[i][j];
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -381,7 +419,13 @@ impl Mul<f32> for Mat4 {
     type Output = Self;
 
     fn mul(self, scalar: f32) -> Self {
-        self.scale(scalar)
+        let mut result = [[0.0; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                result[i][j] = self.data[i][j] * scalar;
+            }
+        }
+        Self { data: result }
     }
 }
 
@@ -389,6 +433,14 @@ impl Mul for Mat4 {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self {
-        self.multiply(&other)
+        let mut result = [[0.0; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                for k in 0..4 {
+                    result[i][j] += self.data[i][k] * other.data[k][j];
+                }
+            }
+        }
+        Self { data: result }
     }
 }

@@ -48,6 +48,10 @@ impl ComponentStorage {
     pub fn has<T: Component>(&self) -> bool {
         self.components.contains_key(&T::component_type())
     }
+
+    pub fn has_type(&self, type_id: TypeId) -> bool {
+        self.components.contains_key(&type_id)
+    }
 }
 
 impl Default for ComponentStorage {
@@ -78,7 +82,7 @@ impl Default for Transform {
 
 #[derive(Debug, Clone)]
 pub struct Mesh {
-    pub vertices: Vec<crate::graphics::Vertex>,
+    pub vertices: Vec<crate::graphics::MeshVertex>,
     pub indices: Vec<u32>,
 }
 

@@ -21,12 +21,9 @@ impl Engine {
     }
 
     pub fn initialize_graphics(&mut self, renderer: RenderContext) -> Result<(), Error> {
-        self.renderer = Some(renderer);
-
-        // Initialize UI system with viewport size
         let viewport_size = renderer.viewport_size();
         self.ui = Some(UI::new(viewport_size));
-
+        self.renderer = Some(renderer);
         Ok(())
     }
 

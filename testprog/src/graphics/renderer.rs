@@ -181,27 +181,31 @@ impl RenderContext {
 
         let clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1.0.into())];
 
-        let builder = AutoCommandBufferBuilder::primary(
-            &self.command_buffer_allocator,
-            self.graphics_queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .map_err(|e| Error::RenderError(format!("Failed to create command buffer: {}", e)))?;
-
-        let builder = builder
-            .begin_render_pass(
-                RenderPassBeginInfo {
-                    clear_values,
-                    ..RenderPassBeginInfo::framebuffer(
-                        self.framebuffers[image_index as usize].clone(),
-                    )
-                },
-                SubpassBeginInfo {
-                    contents: SubpassContents::Inline,
-                    ..Default::default()
-                },
+        let builder = {
+            let mut builder = AutoCommandBufferBuilder::primary(
+                &self.command_buffer_allocator,
+                self.graphics_queue.queue_family_index(),
+                CommandBufferUsage::OneTimeSubmit,
             )
-            .map_err(|e| Error::RenderError(format!("Failed to begin render pass: {}", e)))?;
+            .map_err(|e| Error::RenderError(format!("Failed to create command buffer: {}", e)))?;
+
+            builder
+                .begin_render_pass(
+                    RenderPassBeginInfo {
+                        clear_values,
+                        ..RenderPassBeginInfo::framebuffer(
+                            self.framebuffers[image_index as usize].clone(),
+                        )
+                    },
+                    SubpassBeginInfo {
+                        contents: SubpassContents::Inline,
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| Error::RenderError(format!("Failed to begin render pass: {}", e)))?;
+
+            builder
+        };
 
         self.current_command_buffer = Some(builder);
         Ok(())
@@ -252,6 +256,11 @@ impl RenderContext {
         &mut self,
     ) -> Option<&mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>> {
         self.current_command_buffer.as_mut()
+    }
+
+    pub fn viewport_size(&self) -> Vec2 {
+        let [width, height] = self.swapchain.extent();
+        Vec2::new(width as f32, height as f32)
     }
 }
 

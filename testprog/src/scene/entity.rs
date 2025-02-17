@@ -88,7 +88,7 @@ impl<'a> Query<'a> {
     pub fn matches(&self, entity: &Entity) -> bool {
         self.required_components
             .iter()
-            .all(|&type_id| entity.components.components.contains_key(&type_id))
+            .all(|&type_id| entity.components.has_type(type_id))
     }
 
     pub fn collect(mut self, entities: &'a [Entity]) -> Vec<&'a Entity> {

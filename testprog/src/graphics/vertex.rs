@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use vulkano::buffer::BufferContents;
-use vulkano::format::Format;
 use vulkano::pipeline::graphics::vertex_input::{
     Vertex, VertexBufferDescription, VertexInputRate, VertexMemberInfo,
 };
@@ -8,8 +6,7 @@ use vulkano::pipeline::graphics::vertex_input::{
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Vertex2D {
-    pub x: f32,
-    pub y: f32,
+    pub position: [f32; 2],
 }
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -35,180 +32,186 @@ pub struct UiVertex {
     pub color: [f32; 4],
 }
 
-impl Vertex2D {
-    fn buffer_description() -> VertexBufferDescription {
-        VertexBufferDescription {
-            stride: std::mem::size_of::<Self>() as u32,
-            members: HashMap::from([(
-                "position".to_string(),
-                VertexMemberInfo {
-                    offset: 0,
-                    format: Format::R32G32_SFLOAT,
-                    num_elements: 1,
-                },
-            )]),
-            input_rate: VertexInputRate::Vertex,
-        }
-    }
-}
-
 unsafe impl Vertex for Vertex2D {
     fn per_vertex() -> VertexBufferDescription {
-        Self::buffer_description()
+        let mut members = HashMap::new();
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 0,
+                num_elements: 1,
+            },
+        );
+
+        VertexBufferDescription {
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: VertexInputRate::Vertex,
+            members,
+        }
     }
 
     fn per_instance() -> VertexBufferDescription {
-        Self::buffer_description()
+        VertexBufferDescription {
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor: 1 },
+            members: HashMap::new(),
+        }
     }
 
     fn per_instance_with_divisor(divisor: u32) -> VertexBufferDescription {
-        let mut desc = Self::buffer_description();
-        desc.input_rate = VertexInputRate::Instance { divisor };
-        desc
-    }
-}
-
-impl MeshVertex {
-    fn buffer_description() -> VertexBufferDescription {
         VertexBufferDescription {
-            stride: std::mem::size_of::<Self>() as u32,
-            members: HashMap::from([
-                (
-                    "position".to_string(),
-                    VertexMemberInfo {
-                        offset: 0,
-                        format: Format::R32G32B32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-                (
-                    "normal".to_string(),
-                    VertexMemberInfo {
-                        offset: 12,
-                        format: Format::R32G32B32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-                (
-                    "uv".to_string(),
-                    VertexMemberInfo {
-                        offset: 24,
-                        format: Format::R32G32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-            ]),
-            input_rate: VertexInputRate::Vertex,
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor },
+            members: HashMap::new(),
         }
     }
 }
 
 unsafe impl Vertex for MeshVertex {
     fn per_vertex() -> VertexBufferDescription {
-        Self::buffer_description()
+        let mut members = HashMap::new();
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32B32_SFLOAT,
+                offset: 0,
+                num_elements: 1,
+            },
+        );
+        members.insert(
+            "normal".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32B32_SFLOAT,
+                offset: 12,
+                num_elements: 1,
+            },
+        );
+        members.insert(
+            "uv".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 24,
+                num_elements: 1,
+            },
+        );
+
+        VertexBufferDescription {
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: VertexInputRate::Vertex,
+            members,
+        }
     }
 
     fn per_instance() -> VertexBufferDescription {
-        Self::buffer_description()
+        VertexBufferDescription {
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor: 1 },
+            members: HashMap::new(),
+        }
     }
 
     fn per_instance_with_divisor(divisor: u32) -> VertexBufferDescription {
-        let mut desc = Self::buffer_description();
-        desc.input_rate = VertexInputRate::Instance { divisor };
-        desc
-    }
-}
-
-impl SpriteVertex {
-    fn buffer_description() -> VertexBufferDescription {
         VertexBufferDescription {
-            stride: std::mem::size_of::<Self>() as u32,
-            members: HashMap::from([
-                (
-                    "position".to_string(),
-                    VertexMemberInfo {
-                        offset: 0,
-                        format: Format::R32G32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-                (
-                    "uv".to_string(),
-                    VertexMemberInfo {
-                        offset: 8,
-                        format: Format::R32G32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-            ]),
-            input_rate: VertexInputRate::Vertex,
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor },
+            members: HashMap::new(),
         }
     }
 }
 
 unsafe impl Vertex for SpriteVertex {
     fn per_vertex() -> VertexBufferDescription {
-        Self::buffer_description()
+        let mut members = HashMap::new();
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 0,
+                num_elements: 1,
+            },
+        );
+        members.insert(
+            "uv".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 8,
+                num_elements: 1,
+            },
+        );
+
+        VertexBufferDescription {
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: VertexInputRate::Vertex,
+            members,
+        }
     }
 
     fn per_instance() -> VertexBufferDescription {
-        Self::buffer_description()
+        VertexBufferDescription {
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor: 1 },
+            members: HashMap::new(),
+        }
     }
 
     fn per_instance_with_divisor(divisor: u32) -> VertexBufferDescription {
-        let mut desc = Self::buffer_description();
-        desc.input_rate = VertexInputRate::Instance { divisor };
-        desc
-    }
-}
-
-impl UiVertex {
-    fn buffer_description() -> VertexBufferDescription {
         VertexBufferDescription {
-            stride: std::mem::size_of::<Self>() as u32,
-            members: HashMap::from([
-                (
-                    "position".to_string(),
-                    VertexMemberInfo {
-                        offset: 0,
-                        format: Format::R32G32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-                (
-                    "uv".to_string(),
-                    VertexMemberInfo {
-                        offset: 8,
-                        format: Format::R32G32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-                (
-                    "color".to_string(),
-                    VertexMemberInfo {
-                        offset: 16,
-                        format: Format::R32G32B32A32_SFLOAT,
-                        num_elements: 1,
-                    },
-                ),
-            ]),
-            input_rate: VertexInputRate::Vertex,
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor },
+            members: HashMap::new(),
         }
     }
 }
 
 unsafe impl Vertex for UiVertex {
     fn per_vertex() -> VertexBufferDescription {
-        Self::buffer_description()
+        let mut members = HashMap::new();
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 0,
+                num_elements: 1,
+            },
+        );
+        members.insert(
+            "uv".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32_SFLOAT,
+                offset: 8,
+                num_elements: 1,
+            },
+        );
+        members.insert(
+            "color".to_string(),
+            VertexMemberInfo {
+                format: vulkano::format::Format::R32G32B32A32_SFLOAT,
+                offset: 16,
+                num_elements: 1,
+            },
+        );
+
+        VertexBufferDescription {
+            stride: std::mem::size_of::<Self>() as u32,
+            input_rate: VertexInputRate::Vertex,
+            members,
+        }
     }
 
     fn per_instance() -> VertexBufferDescription {
-        Self::buffer_description()
+        VertexBufferDescription {
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor: 1 },
+            members: HashMap::new(),
+        }
     }
 
     fn per_instance_with_divisor(divisor: u32) -> VertexBufferDescription {
-        let mut desc = Self::buffer_description();
-        desc.input_rate = VertexInputRate::Instance { divisor };
-        desc
+        VertexBufferDescription {
+            stride: 0,
+            input_rate: VertexInputRate::Instance { divisor },
+            members: HashMap::new(),
+        }
     }
 }

@@ -24,13 +24,17 @@ impl AssetCache {
         arc
     }
 
-    pub fn get<T: Asset + 'static>(&self, path: &Path) -> Option<Arc<T>> {
+    pub fn get<T: Asset>(&self, path: &Path) -> Option<Arc<T>> {
         self.assets.get(path).and_then(|asset| {
-            asset.as_any().downcast_ref::<T>().map(|_| {
-                // Since we know the type matches, we can safely clone the Arc
-                // and downcast it
-                Arc::downcast::<T>(asset.clone()).expect("Downcast failed after type check")
-            })
+            if asset.as_ref().type_id() == std::any::TypeId::of::<T>() {
+                // SAFETY: We just checked that the type matches
+                Some(unsafe {
+                    let raw = Arc::into_raw(asset.clone());
+                    Arc::from_raw(raw as *const T)
+                })
+            } else {
+                None
+            }
         })
     }
 

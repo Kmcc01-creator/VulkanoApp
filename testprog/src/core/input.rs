@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use winit::dpi::PhysicalPosition;
-use winit::event::ElementState;
 use winit::event::MouseButton;
+use winit::event::{ElementState, WindowEvent};
 
 #[derive(Default, Clone)]
 pub struct InputState {
@@ -17,6 +17,29 @@ impl InputState {
             mouse_position: PhysicalPosition::new(0.0, 0.0),
             mouse_delta: (0.0, 0.0),
         }
+    }
+
+    pub fn update(&mut self) {
+        self.clear_frame_state();
+    }
+
+    pub fn handle_event(&mut self, event: &WindowEvent) {
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                self.update_mouse_position(*position);
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                self.update_mouse_button(*button, *state);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn cursor_position(&self) -> Option<glam::Vec2> {
+        Some(glam::Vec2::new(
+            self.mouse_position.x as f32,
+            self.mouse_position.y as f32,
+        ))
     }
 
     pub fn update_mouse_button(&mut self, button: MouseButton, state: ElementState) {

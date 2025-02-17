@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AssetType {
@@ -9,13 +10,11 @@ pub enum AssetType {
     Sound,
     Script,
 }
-
-pub trait Asset: 'static + Send + Sync {
+pub trait Asset: std::any::Any + 'static + Send + Sync {
     fn asset_type() -> AssetType
     where
         Self: Sized;
     fn path(&self) -> &PathBuf;
-    fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn Asset>;
 }
 
@@ -46,10 +45,6 @@ impl Asset for TextureAsset {
         &self.path
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn clone_box(&self) -> Box<dyn Asset> {
         Box::new(self.clone())
     }
@@ -75,10 +70,6 @@ impl Asset for ModelAsset {
         &self.path
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn clone_box(&self) -> Box<dyn Asset> {
         Box::new(self.clone())
     }
@@ -102,10 +93,6 @@ impl Asset for ShaderAsset {
 
     fn path(&self) -> &PathBuf {
         &self.path
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn clone_box(&self) -> Box<dyn Asset> {

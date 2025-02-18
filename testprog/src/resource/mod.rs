@@ -8,13 +8,13 @@ use std::sync::Arc;
 
 pub use asset::{Asset, AssetType};
 pub use cache::AssetCache;
-pub use loader::AssetLoader;
+use loader::AssetLoader;
 
 use crate::core::error::Error;
 
 pub struct ResourceManager {
     asset_path: PathBuf,
-    loaders: HashMap<AssetType, Box<dyn AssetLoader>>,
+    loaders: HashMap<AssetType, AssetLoader>,
     cache: AssetCache,
 }
 
@@ -40,24 +40,13 @@ impl ResourceManager {
             Error::ResourceError(format!("No loader for asset type {:?}", T::asset_type()))
         })?;
 
-        let asset = loader.load(&full_path)?;
-        let asset = asset
-            .as_any()
-            .downcast_ref::<T>()
-            .ok_or_else(|| {
-                Error::ResourceError(format!(
-                    "Asset loaded from {} is not of expected type {}",
-                    path,
-                    std::any::type_name::<T>()
-                ))
-            })?
-            .clone();
+        let typed_asset = loader.load_typed::<T>(&full_path)?;
 
-        Ok(self.cache.insert(full_path, asset))
+        Ok(self.cache.insert(full_path, typed_asset))
     }
 
-    pub fn register_loader<L: AssetLoader + 'static>(&mut self, loader: L) {
-        self.loaders.insert(loader.asset_type(), Box::new(loader));
+    pub fn register_loader(&mut self, loader: AssetLoader) {
+        self.loaders.insert(loader.asset_type(), loader);
     }
 
     pub fn set_asset_path<P: Into<PathBuf>>(&mut self, path: P) {

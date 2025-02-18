@@ -72,14 +72,11 @@ impl Window {
         })
     }
 
-    pub fn run_event_loop<F>(&mut self, mut callback: F) -> Result<(), Error>
+    pub fn run_event_loop<F>(&mut self, _callback: F) -> !
     where
         F: FnMut(&mut Self) + 'static,
     {
-        let event_loop = self
-            .event_loop
-            .take()
-            .ok_or_else(|| Error::WindowCreation("Event loop already taken".into()))?;
+        let event_loop = self.event_loop.take().expect("Event loop already taken");
 
         let sender = self.message_sender.clone();
 
@@ -114,9 +111,7 @@ impl Window {
                 }
                 _ => (),
             }
-        });
-
-        Ok(())
+        })
     }
 
     pub fn handle_events(&mut self) -> Result<(), Error> {

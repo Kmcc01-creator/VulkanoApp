@@ -1,7 +1,6 @@
 use glam::{Quat, Vec3};
-use std::collections::HashMap;
 
-use super::collider::{Collider, AABB};
+use super::collider::Collider;
 use super::rigidbody::{BodyType, RigidBody};
 
 #[derive(Debug)]

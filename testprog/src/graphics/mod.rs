@@ -16,7 +16,7 @@ use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo, QueueFla
 use vulkano::image::Image;
 use vulkano::image::ImageUsage;
 use vulkano::swapchain::{
-    CompositeAlpha, Surface, Surface as SwapchainSurface, Swapchain, SwapchainCreateInfo,
+    Surface, Swapchain, SwapchainCreateInfo,
 };
 
 pub fn create_logical_device(

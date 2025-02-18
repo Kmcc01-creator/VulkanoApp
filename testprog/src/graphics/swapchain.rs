@@ -4,7 +4,7 @@ use vulkano::device::Device;
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageUsage};
-use vulkano::swapchain::{CompositeAlpha, Surface, Swapchain, SwapchainCreateInfo};
+use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 
 pub struct SwapchainContext {
     swapchain: Arc<Swapchain>,

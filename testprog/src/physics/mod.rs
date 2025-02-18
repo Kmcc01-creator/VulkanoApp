@@ -6,7 +6,7 @@ pub use collider::{Collider, ColliderType};
 pub use physics_world::PhysicsWorld;
 pub use rigidbody::RigidBody;
 
-use glam::{Vec2, Vec3};
+use glam::Vec3;
 
 /// Physics configuration options
 #[derive(Debug, Clone)]

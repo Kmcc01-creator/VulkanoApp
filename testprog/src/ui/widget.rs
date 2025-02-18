@@ -175,7 +175,7 @@ impl WorldSpaceWidget {
 impl Widget for WorldSpaceWidget {
     fn render(
         &self,
-        bounds: Rect,
+        _bounds: Rect,
         style: &Style,
         renderer: &mut MockRenderer,
     ) -> Result<(), Error> {

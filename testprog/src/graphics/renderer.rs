@@ -5,9 +5,8 @@ use vulkano::command_buffer::{
     SubpassEndInfo,
 };
 use vulkano::device::Queue;
-use vulkano::image::view::ImageView;
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
-use vulkano::swapchain::{self, PresentMode, SwapchainPresentInfo};
+use vulkano::swapchain::{self, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture};
 
 use super::swapchain::SwapchainContext;
@@ -162,7 +161,7 @@ impl RenderContext {
             future.cleanup_finished();
         }
 
-        let (image_index, suboptimal, acquire_future) =
+        let (image_index, suboptimal, _acquire_future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None) {
                 Ok((index, suboptimal, future)) => (index, suboptimal, future),
                 Err(e) => {

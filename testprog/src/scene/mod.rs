@@ -32,7 +32,7 @@ impl SceneManager {
         }
     }
 
-    pub fn render(&self, graphics: &mut RenderContext) -> Result<(), crate::core::error::Error> {
+    pub fn render(&self, _graphics: &mut RenderContext) -> Result<(), crate::core::error::Error> {
         // TODO: Implement scene rendering using scene graph
         Ok(())
     }

@@ -15,8 +15,9 @@ pub struct Shader {
 }
 
 impl Shader {
+    #[allow(deprecated)]
     pub fn new(device: Arc<Device>, code: &[u32], ty: ShaderType) -> Result<Self, Error> {
-        let stage = match ty {
+        let _stage = match ty {
             ShaderType::Vertex => ShaderStages::VERTEX,
             ShaderType::Fragment => ShaderStages::FRAGMENT,
         };

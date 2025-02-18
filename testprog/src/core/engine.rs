@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use crate::core::error::Error;
 use crate::core::input::InputState;

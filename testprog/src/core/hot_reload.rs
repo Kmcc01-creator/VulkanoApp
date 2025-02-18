@@ -1,8 +1,7 @@
 use crate::core::error::Error;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::time::Duration;
+use std::sync::mpsc::{channel, Receiver};
 
 pub struct HotReloader {
     watcher: RecommendedWatcher,

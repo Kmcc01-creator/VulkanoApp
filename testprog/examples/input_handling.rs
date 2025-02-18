@@ -1,7 +1,7 @@
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Event, MouseButton, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::Window;
+use winit::window::{Window, WindowBuilder};
 
 #[derive(Default)]
 struct InputState {
@@ -11,14 +11,16 @@ struct InputState {
     window_focused: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     // Create the event loop
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::new();
 
     // Create a basic window
-    let window = Window::new(&event_loop)?;
-    window.set_title("Input Handling Example");
-    window.set_inner_size(LogicalSize::new(800, 600));
+    let window = WindowBuilder::new()
+        .with_title("Input Handling Example")
+        .with_inner_size(LogicalSize::new(800, 600))
+        .build(&event_loop)
+        .expect("Failed to create window");
 
     // Center window
     if let Some(monitor) = window.current_monitor() {

@@ -9,6 +9,8 @@ pub enum Error {
     CommandRecordingError(String),
     OutOfMemory(String),
     RenderError(String),
+    ResourceError(String),
+    Other(String),
 }
 
 impl std::error::Error for Error {}
@@ -25,6 +27,8 @@ impl fmt::Display for Error {
             Error::CommandRecordingError(msg) => write!(f, "Command recording error: {}", msg),
             Error::OutOfMemory(msg) => write!(f, "Out of memory error: {}", msg),
             Error::RenderError(msg) => write!(f, "Render error: {}", msg),
+            Error::ResourceError(msg) => write!(f, "Resource error: {}", msg),
+            Error::Other(msg) => write!(f, "Error: {}", msg),
         }
     }
 }

@@ -6,20 +6,22 @@ use testprog::graphics::{
 };
 use vulkano::command_buffer::CommandBufferUsage;
 use vulkano::instance::{Instance, InstanceCreateInfo};
-use vulkano::swapchain::Surface;
-use winit::event_loop::EventLoop;
+use vulkano::swapchain::{create_surface_from_winit, Surface};
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create instance and window
-    let instance = Instance::new(InstanceCreateInfo::default())?;
+    let instance = Instance::new(InstanceCreateInfo::default(), None)?;
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Graphics Features Example")
-        .build(&event_loop)?;
+        .build(&event_loop)
+        .map_err(|e| Error::WindowCreation(e.to_string()))?;
 
     // Create surface
-    let surface = Surface::from_window(instance.clone(), window)?;
+    let surface = create_surface_from_winit(instance.clone(), window)?;
 
     // Create graphics configuration
     let config = GraphicsConfigBuilder::new()
@@ -39,7 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let physical = instance
             .enumerate_physical_devices()?
             .next()
-            .ok_or("No physical device available")?;
+            .ok_or_else(|| {
+                Error::GraphicsInitialization("No physical device available".to_string())
+            })?;
         graphics::create_logical_device(physical, surface.clone())?
     };
 
@@ -68,11 +72,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
-    // Load shaders (simplified for example)
+    // Load shaders
     let vertex_shader = graphics::shader::load_vertex_shader(device.clone())?;
     let fragment_shader = graphics::shader::load_fragment_shader(device.clone())?;
 
-    // Create pipeline layout and render pass (simplified for example)
+    // Create pipeline layout and render pass
     let layout = renderer.create_pipeline_layout()?;
     let render_pass = renderer.create_render_pass()?;
 
@@ -109,6 +113,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run event loop
     event_loop.run(move |event, _, control_flow| {
-        // Handle events and rendering here
+        *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                *control_flow = ControlFlow::Exit;
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                // Handle resize here if needed
+            }
+            Event::MainEventsCleared => {
+                // Update renderer
+                if renderer.begin_frame().is_ok() {
+                    // Handle rendering here
+                    let _ = renderer.end_frame();
+                }
+            }
+            _ => (),
+        }
     });
 }

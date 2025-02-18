@@ -1,7 +1,7 @@
 pub mod config;
 mod performance;
 mod pipeline;
-mod renderer;
+pub mod renderer;
 mod shader;
 mod swapchain;
 mod vertex;

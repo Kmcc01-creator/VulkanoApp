@@ -1,7 +1,7 @@
 use crate::core::error::Error;
 use crate::core::hot_reload::HotReloader;
 use crate::core::input::InputState;
-use crate::graphics::renderer::RenderContext;
+use crate::graphics::RenderContext;
 use crate::ui::UI;
 
 pub struct Engine {

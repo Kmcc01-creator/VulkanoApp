@@ -1,9 +1,9 @@
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::Window;
+use winit::window::{Window, WindowBuilder};
 
 // Messages we'll send between threads
 #[derive(Debug)]
@@ -20,17 +20,19 @@ struct WindowState {
     focused: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     // Create message channels
     let (tx, rx) = channel::<WindowMessage>();
 
     // Create event loop
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::new();
 
     // Create window
-    let window = Window::new(&event_loop)?;
-    window.set_title("Event Loop Example");
-    window.set_inner_size(LogicalSize::new(800, 600));
+    let window = WindowBuilder::new()
+        .with_title("Event Loop Example")
+        .with_inner_size(LogicalSize::new(800, 600))
+        .build(&event_loop)
+        .expect("Failed to create window");
 
     // Center window
     if let Some(monitor) = window.current_monitor() {
@@ -116,5 +118,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for state thread to finish
     let _ = state_thread.join();
-    Ok(())
 }

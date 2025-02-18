@@ -2,7 +2,6 @@ mod cache;
 
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::{GraphicsPipeline, PipelineLayout};
 use vulkano::render_pass::RenderPass;

@@ -3,15 +3,16 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::{Window, WindowBuilder};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     // Create the event loop
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::new();
 
     // Create a window using WindowBuilder
     let window = WindowBuilder::new()
         .with_title("Basic Window Example")
         .with_inner_size(LogicalSize::new(800, 600))
-        .build(&event_loop)?;
+        .build(&event_loop)
+        .expect("Failed to create window");
 
     // Center the window on the primary monitor
     if let Some(monitor) = window.current_monitor() {

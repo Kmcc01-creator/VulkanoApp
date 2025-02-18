@@ -1,5 +1,13 @@
 # Contributing Guide 🤝
 
+## Quick Navigation
+
+- [Getting Started](#getting-started)
+- [Development Workflow](#development-workflow)
+- [Code Guidelines](#code-guidelines)
+- [Documentation](#documentation)
+- Back to [Main Documentation](README.md)
+
 ## Getting Started
 
 1. **Fork and Clone**
@@ -12,7 +20,7 @@ cargo build
 
 2. **Set Up Development Environment**
 
-- Install Rust (see [Getting Started](GettingStarted.md))
+- Install Rust (see [Getting Started Guide](GettingStarted.md))
 - Install Vulkan SDK
 - Configure your IDE (we recommend VS Code with rust-analyzer)
 
@@ -20,7 +28,7 @@ cargo build
 
 ### 1. Choose an Issue
 
-- Check [open issues](https://github.com/username/game-engine/issues)
+- Check open issues on GitHub
 - Look for `good first issue` labels for beginners
 - Comment on the issue you'd like to work on
 
@@ -75,12 +83,6 @@ mod tests {
 }
 ```
 
-#### Documentation
-
-- Update relevant documentation
-- Add inline documentation for public APIs
-- Include examples for new features
-
 ### 4. Commit Guidelines
 
 ```bash
@@ -129,6 +131,32 @@ cargo fmt
 - Provide clear description
 - Add screenshots/videos if relevant
 
+## Documentation
+
+### Required Documentation
+
+1. **Code Documentation**
+
+   - Document all public APIs
+   - Include usage examples
+   - Explain complex algorithms
+   - Add performance notes
+
+2. **Testing Documentation**
+
+   - Document test cases
+   - Explain test setup
+   - Include test data sources
+
+3. **Update Guides**
+   - Update [Technical Reference](TechnicalReference.md) if needed
+   - Add examples to [Getting Started](GettingStarted.md) if relevant
+   - Update [README](README.md) for major changes
+
+## Project Structure
+
+See [Directory Structure](DirectoryStructure.md) for detailed project layout.
+
 ## Review Process
 
 ### What We Look For
@@ -145,18 +173,6 @@ cargo fmt
 2. Update your branch
 3. Request re-review if needed
 
-## Project Structure
-
-See [Directory Structure](DirectoryStructure.md) for detailed layout.
-
-```
-src/
-├── core/       # Core systems
-├── graphics/   # Graphics pipeline
-├── physics/    # Physics engine
-└── scene/      # Scene management
-```
-
 ## Release Process
 
 1. **Version Bump**
@@ -168,11 +184,9 @@ name = "game-engine"
 version = "0.2.0"  # Update version
 ```
 
-2. **Update Changelog**
+2. **Update CHANGELOG**
 
 ```markdown
-# CHANGELOG.md
-
 ## [0.2.0] - 2025-02-18
 
 ### Added
@@ -185,43 +199,16 @@ version = "0.2.0"  # Update version
 - Sphere collision detection
 ```
 
-3. **Release Tags**
-
-```bash
-git tag -a v0.2.0 -m "Release version 0.2.0"
-git push origin v0.2.0
-```
-
-## Communication
-
-- **Issues**: Bug reports and feature requests
-- **Discussions**: Design proposals and questions
-- **Discord**: Real-time communication
-- **Pull Requests**: Code review discussions
-
-## Resources
-
-- [Technical Reference](TechnicalReference.md)
-- [Architecture Overview](../../docs/Architecture.md)
-- [API Documentation](https://docs.example.com)
-
-## Code of Conduct
-
-We follow a standard code of conduct promoting:
-
-- Inclusive environment
-- Respectful communication
-- Professional interaction
-- Constructive feedback
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the project's MIT License.
-
 ## Questions?
 
-- Check our [Documentation](../../docs)
-- Join our [Discord](https://discord.gg/example)
-- Open a [Discussion](https://github.com/username/game-engine/discussions)
+- Check our [Documentation Index](index.md)
+- Review [Technical Reference](TechnicalReference.md)
+- See [Getting Started Guide](GettingStarted.md)
 
-Thank you for contributing! 🎮
+---
+
+<div align="center">
+
+[Back to README](README.md) | [Getting Started](GettingStarted.md) | [Technical Reference](TechnicalReference.md)
+
+</div>

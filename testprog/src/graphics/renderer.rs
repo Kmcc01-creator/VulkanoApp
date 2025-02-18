@@ -9,11 +9,9 @@ use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass};
 use vulkano::swapchain::{self, SwapchainPresentInfo};
 use vulkano::sync::{self, GpuFuture};
 
-use super::swapchain::SwapchainContext;
+use super::{config::GraphicsConfig, swapchain::SwapchainContext};
 use crate::core::error::Error;
 use glam::{Vec2, Vec3, Vec4};
-
-const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct RenderContext {
     render_pass: Arc<RenderPass>,
@@ -26,6 +24,7 @@ pub struct RenderContext {
     current_frame: usize,
     current_image: u32,
     camera: Camera,
+    config: GraphicsConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -35,8 +34,24 @@ pub struct Camera {
     pub projection_matrix: glam::Mat4,
 }
 
+impl Camera {
+    fn new(config: &GraphicsConfig) -> Self {
+        Self {
+            position: Vec3::ZERO,
+            view_matrix: glam::Mat4::IDENTITY,
+            projection_matrix: glam::Mat4::perspective_rh(
+                config.camera.fov,
+                1.0,
+                config.camera.near_plane,
+                config.camera.far_plane,
+            ),
+        }
+    }
+}
+
 impl Default for Camera {
     fn default() -> Self {
+        // This is used only when a GraphicsConfig is not available
         Self {
             position: Vec3::ZERO,
             view_matrix: glam::Mat4::IDENTITY,
@@ -51,7 +66,11 @@ impl Default for Camera {
 }
 
 impl RenderContext {
-    pub fn new(graphics_queue: Arc<Queue>, swapchain: SwapchainContext) -> Result<Self, Error> {
+    pub fn new(
+        graphics_queue: Arc<Queue>,
+        swapchain: SwapchainContext,
+        config: GraphicsConfig,
+    ) -> Result<Self, Error> {
         let command_buffer_allocator = StandardCommandBufferAllocator::new(
             graphics_queue.device().clone(),
             Default::default(),
@@ -62,13 +81,13 @@ impl RenderContext {
             attachments: {
                 color: {
                     format: swapchain.format(),
-                    samples: 1,
+                    samples: config.quality.msaa_samples,
                     load_op: Clear,
                     store_op: Store,
                 },
                 depth_stencil: {
                     format: vulkano::format::Format::D16_UNORM,
-                    samples: 1,
+                    samples: config.quality.msaa_samples,
                     load_op: Clear,
                     store_op: DontCare,
                 }
@@ -94,7 +113,8 @@ impl RenderContext {
             previous_frame_end: Some(sync::now(graphics_queue.device().clone()).boxed()),
             current_frame: 0,
             current_image: 0,
-            camera: Camera::default(),
+            camera: Camera::new(&config),
+            config,
         })
     }
 
@@ -178,7 +198,10 @@ impl RenderContext {
 
         self.current_image = image_index;
 
-        let clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into()), Some(1.0.into())];
+        let clear_values = vec![
+            Some(self.config.camera.clear_color.into()),
+            Some(1.0.into()),
+        ];
 
         let builder = {
             let mut builder = AutoCommandBufferBuilder::primary(
@@ -240,7 +263,7 @@ impl RenderContext {
             .map_err(|e| Error::RenderError(format!("Failed to flush future: {}", e)))?;
 
         self.previous_frame_end = Some(Box::new(future));
-        self.current_frame = (self.current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+        self.current_frame = (self.current_frame + 1) % self.config.max_frames_in_flight;
 
         Ok(())
     }

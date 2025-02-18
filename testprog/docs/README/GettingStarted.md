@@ -7,6 +7,14 @@
 - CMake 3.15+
 - Git
 
+## Quick Navigation
+
+- [Basic Setup](#installation)
+- [First Steps](#first-steps)
+- [Example Code](#creating-your-first-application)
+- [Core Concepts](#core-concepts)
+- Back to [Main Documentation](README.md)
+
 ## Installation
 
 1. **Install Rust**
@@ -137,21 +145,11 @@ if let Some(body) = scene.get_component_mut::<RigidBody>(entity) {
 }
 ```
 
-## Project Layout
+## Next Steps
 
-```
-your-game/
-├── src/
-│   ├── main.rs       # Application entry point
-│   ├── game.rs       # Game logic
-│   ├── systems/      # Custom systems
-│   └── components/   # Custom components
-├── assets/
-│   ├── models/       # 3D models
-│   ├── textures/     # Texture files
-│   └── shaders/      # Shader files
-└── Cargo.toml        # Project configuration
-```
+1. Read the [Technical Reference](TechnicalReference.md) for detailed API documentation
+2. Check out the [Directory Structure](DirectoryStructure.md) to understand the project layout
+3. Review the [Contributing Guide](Contributing.md) if you want to help develop the engine
 
 ## Common Tasks
 
@@ -183,48 +181,16 @@ window.on_input(|event| {
 });
 ```
 
-### Creating UI
-
-```rust
-use engine::ui::{Button, Panel, Layout};
-
-let ui = Panel::new()
-    .with_layout(Layout::Vertical)
-    .with_child(Button::new("Start Game"))
-    .with_child(Button::new("Settings"))
-    .with_child(Button::new("Quit"));
-```
-
-## Best Practices
-
-1. **Resource Management**
-
-   - Use the resource manager for asset loading
-   - Clean up resources when no longer needed
-   - Batch similar resources together
-
-2. **Performance**
-
-   - Use appropriate data structures
-   - Batch similar operations
-   - Profile your code regularly
-
-3. **Error Handling**
-   - Use Result for fallible operations
-   - Provide meaningful error messages
-   - Handle cleanup in error cases
-
-## Next Steps
-
-1. Check out the [Architecture Guide](../Architecture.md)
-2. Review [Example Projects](../../examples/)
-3. Join our [Discord Community](https://discord.gg/example)
-4. Contribute to the project
-
 ## Troubleshooting
 
-See our [Troubleshooting Guide](Troubleshooting.md) for common issues and solutions.
+For common issues and solutions, see our [Technical Reference](TechnicalReference.md#troubleshooting).
+
+Need more help? Check our full [Documentation Index](index.md).
 
 ---
 
-Need more help? Check our [Documentation](https://docs.example.com) or join our [Discord](https://discord.gg/example).
+<div align="center">
+
+[Back to README](README.md) | [Technical Reference](TechnicalReference.md) | [Contributing](Contributing.md)
+
+</div>

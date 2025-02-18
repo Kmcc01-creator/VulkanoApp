@@ -1,5 +1,5 @@
-
 use crate::core::error::Error;
+use crate::core::hot_reload::HotReloader;
 use crate::core::input::InputState;
 use crate::graphics::renderer::RenderContext;
 use crate::ui::UI;
@@ -8,6 +8,7 @@ pub struct Engine {
     input: InputState,
     renderer: Option<RenderContext>,
     ui: Option<UI>,
+    hot_reloader: Option<HotReloader>,
 }
 
 impl Engine {
@@ -16,6 +17,7 @@ impl Engine {
             input: InputState::new(),
             renderer: None,
             ui: None,
+            hot_reloader: None,
         }
     }
 
@@ -26,6 +28,22 @@ impl Engine {
         Ok(())
     }
 
+    pub fn initialize_hot_reload(&mut self) -> Result<(), Error> {
+        let mut hot_reloader = HotReloader::new()?;
+
+        // Watch src directory for changes
+        hot_reloader.watch("src")?;
+
+        // Add default reload handlers
+        hot_reloader.add_reload_handler(|path| {
+            println!("Detected change in: {:?}", path);
+            Ok(())
+        });
+
+        self.hot_reloader = Some(hot_reloader);
+        Ok(())
+    }
+
     pub fn update(&mut self) -> Result<(), Error> {
         // Update input state
         self.input.update();
@@ -33,6 +51,11 @@ impl Engine {
         // Update UI if initialized
         if let Some(ui) = &mut self.ui {
             ui.update();
+        }
+
+        // Update hot reloader if initialized
+        if let Some(hot_reloader) = &mut self.hot_reloader {
+            hot_reloader.update()?;
         }
 
         Ok(())
@@ -93,5 +116,17 @@ impl Engine {
 
     pub fn ui(&mut self) -> Option<&mut UI> {
         self.ui.as_mut()
+    }
+
+    pub fn add_hot_reload_handler<F>(&mut self, handler: F) -> Result<(), Error>
+    where
+        F: Fn(&std::path::Path) -> Result<(), Error> + Send + 'static,
+    {
+        if let Some(hot_reloader) = &mut self.hot_reloader {
+            hot_reloader.add_reload_handler(handler);
+            Ok(())
+        } else {
+            Err(Error::Other("Hot reloader not initialized".to_string()))
+        }
     }
 }

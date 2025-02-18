@@ -20,8 +20,8 @@ graph TD
     A --> E[Contributing]
 
     B --> F[Examples]
-    C --> G[API Reference]
-    D --> H[Source Code]
+    C --> G[System Reference]
+    D --> H[Project Layout]
     E --> I[Development]
 ```
 
@@ -29,86 +29,139 @@ graph TD
 
 ### Graphics System
 
-- [Vulkano Integration](../guides/vulkano_integration.md)
-- [Shader System](../guides/shader_system.md)
-- [Render Pipeline](../guides/render_pipeline.md)
+- Engine initialization
+- Vulkan integration
+- Shader system
+- Render pipeline
+- Resource management
 
 ### Physics System
 
-- [Physics Overview](../guides/physics_overview.md)
-- [Collision Detection](../guides/collision_detection.md)
-- [Physics Integration](../guides/physics_integration.md)
+- Physics world
+- Collision detection
+- Rigid body dynamics
+- Constraint system
 
 ### Scene Management
 
-- [ECS Architecture](../guides/ecs_architecture.md)
-- [Scene Graph](../guides/scene_graph.md)
-- [Component System](../guides/component_system.md)
+- Entity Component System
+- Scene graph
+- Transform hierarchy
+- Component lifecycle
 
 ### Resource Management
 
-- [Asset Loading](../guides/asset_loading.md)
-- [Resource Caching](../guides/resource_caching.md)
-- [Memory Management](../guides/memory_management.md)
+- Asset loading
+- Resource caching
+- Memory management
+- Asset pipeline
 
-## Examples
+## Example Code
 
 ### Basic Examples
 
-1. [Window Creation](../../examples/basic_window.rs)
-2. [Event Handling](../../examples/event_loop.rs)
-3. [Input Processing](../../examples/input_handling.rs)
+```rust
+// Window Creation
+use engine::{Window, WindowConfig};
 
-### Advanced Examples
+fn main() {
+    let window = Window::new(WindowConfig::default());
+    window.run(|frame| {
+        // Frame update logic
+    });
+}
+```
 
-1. [Physics Simulation](../../examples/physics_demo.rs)
-2. [3D Rendering](../../examples/rendering/basic_triangle.rs)
-3. [UI System](../../examples/ui_demo.rs)
+### Graphics Example
 
-## API Reference
+```rust
+// Basic Rendering
+use engine::{Graphics, Mesh, Shader};
 
-- [Core API](../api/core.md)
-- [Graphics API](../api/graphics.md)
-- [Physics API](../api/physics.md)
-- [Scene API](../api/scene.md)
+fn setup_graphics(window: &Window) {
+    let graphics = Graphics::new(window);
+    let mesh = Mesh::cube();
+    let shader = Shader::default();
+
+    graphics.draw(mesh, shader);
+}
+```
+
+### Physics Example
+
+```rust
+// Physics Setup
+use engine::{PhysicsWorld, RigidBody};
+
+fn setup_physics() {
+    let mut world = PhysicsWorld::new();
+    let body = RigidBody::new()
+        .with_mass(1.0)
+        .with_position([0.0, 1.0, 0.0]);
+
+    world.add_body(body);
+}
+```
+
+## Reference Documentation
+
+### Core Systems
+
+- Window management
+- Event handling
+- Resource management
+- Threading model
+
+### Graphics Pipeline
+
+- Device management
+- Swapchain handling
+- Pipeline creation
+- Shader compilation
+
+### Physics Engine
+
+- Collision detection
+- Rigid body simulation
+- Constraint solving
+- Physics materials
+
+### Scene System
+
+- Entity management
+- Component storage
+- System updates
+- Scene serialization
 
 ## Development Resources
 
-### Guides
+### Getting Started
 
-- [Code Style Guide](../guides/code_style.md)
-- [Testing Guide](../guides/testing.md)
-- [Performance Guide](../guides/performance.md)
+1. [Engine Setup](GettingStarted.md)
+2. [Basic Usage](GettingStarted.md#first-steps)
+3. [Project Structure](DirectoryStructure.md)
 
-### Tools
+### Development Guide
 
-- [Build Scripts](../tools/build.md)
-- [Asset Pipeline](../tools/asset_pipeline.md)
-- [Debugging Tools](../tools/debugging.md)
-
-## Community
-
-- [Discord Server](https://discord.gg/example)
-- [GitHub Discussions](https://github.com/username/game-engine/discussions)
-- [Issue Tracker](https://github.com/username/game-engine/issues)
-
-## Version History
-
-- [Changelog](../../CHANGELOG.md)
-- [Migration Guide](../guides/migration.md)
-- [Breaking Changes](../guides/breaking_changes.md)
-
-## Contributing
-
-1. [How to Contribute](Contributing.md)
-2. [Development Setup](GettingStarted.md)
-3. [Code Review Process](../guides/code_review.md)
+1. [Contributing](Contributing.md)
+2. [Code Style](Contributing.md#code-style)
+3. [Testing](Contributing.md#testing)
 
 ## Support
 
-- [FAQ](../support/faq.md)
-- [Troubleshooting](../support/troubleshooting.md)
-- [Known Issues](../support/known_issues.md)
+### Common Tasks
+
+- Engine initialization
+- Asset loading
+- Scene setup
+- Physics configuration
+
+### Best Practices
+
+- Resource management
+- Performance optimization
+- Memory handling
+- Error handling
 
 ---
 

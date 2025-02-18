@@ -1,12 +1,18 @@
+pub mod config;
+mod performance;
 mod pipeline;
-pub mod renderer;
+mod renderer;
 mod shader;
 mod swapchain;
 mod vertex;
 
+// Re-export commonly used types
+pub use config::{GraphicsConfig, GraphicsConfigBuilder};
+pub use performance::{AsyncLoader, BatchRenderer, PerformanceManager};
+pub use pipeline::{PipelineBuilder, PipelineManager};
 pub use renderer::RenderContext;
 pub use swapchain::SwapchainContext;
-pub use vertex::{MeshVertex, SpriteVertex, UiVertex};
+pub use vertex::prelude::*;
 
 use crate::core::error::Error;
 use std::sync::Arc;
@@ -15,10 +21,9 @@ use vulkano::device::DeviceExtensions;
 use vulkano::device::{Device, DeviceCreateInfo, Queue, QueueCreateInfo, QueueFlags};
 use vulkano::image::Image;
 use vulkano::image::ImageUsage;
-use vulkano::swapchain::{
-    Surface, Swapchain, SwapchainCreateInfo,
-};
+use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
 
+/// Create logical device and queues
 pub fn create_logical_device(
     physical_device: Arc<PhysicalDevice>,
     surface: Arc<Surface>,
@@ -56,6 +61,7 @@ pub fn create_logical_device(
     Ok((device, queues))
 }
 
+/// Create swapchain for window rendering
 pub fn create_swapchain(
     device: Arc<Device>,
     surface: Arc<Surface>,
@@ -68,7 +74,6 @@ pub fn create_swapchain(
             Error::GraphicsInitialization(format!("Failed to get surface capabilities: {}", e))
         })?;
 
-    // Use the first available composite alpha mode from the capabilities
     let composite_alpha = capabilities
         .supported_composite_alpha
         .into_iter()

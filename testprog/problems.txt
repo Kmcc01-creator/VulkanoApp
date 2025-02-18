@@ -1,0 +1,12 @@
+const problems = vscode.languages.getDiagnostics();
+const output = problems.map(([uri, diagnostics]) => {
+    return `${uri.fsPath}:\n${diagnostics.map(d =>
+        `  ${d.severity}: ${d.message} (${d.range.start.line},${d.range.start.character})`
+    ).join('\n')}`;
+}).join('\n\n');
+
+// Write to file
+fs.writeFileSync('problems.txt', output);
+
+// Or output to terminal
+console.log(output);

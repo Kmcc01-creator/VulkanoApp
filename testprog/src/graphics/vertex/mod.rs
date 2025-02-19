@@ -97,4 +97,4 @@ pub trait InterleavedVertex: Vertex + VertexLayout {
 }
 
 // Re-export vertex types
-pub use types::{ColoredVertex, InstanceData, TexturedVertex, Vertex2D, Vertex3D};
+pub use types::{ColoredVertex, InstanceData, TexturedVertex, Vertex2D, Vertex3D as MeshVertex};

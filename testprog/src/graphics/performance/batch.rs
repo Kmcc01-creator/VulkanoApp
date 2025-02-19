@@ -91,15 +91,19 @@ impl BatchRenderer {
                 continue;
             }
 
-            // Create vertex buffer
-            let buffer = Buffer::new_slice(
+            // Create vertex buffer using StandardMemoryAllocator
+            let allocator = vulkano::memory::allocator::StandardMemoryAllocator::new_default(
                 self.device.clone(),
+            );
+            let buffer = Buffer::new_slice(
+                &allocator,
                 BufferCreateInfo {
                     usage: BufferUsage::VERTEX_BUFFER,
                     ..Default::default()
                 },
                 vulkano::memory::allocator::AllocationCreateInfo {
-                    usage: vulkano::memory::allocator::MemoryUsage::Upload,
+                    memory_type_filter: vulkano::memory::allocator::MemoryTypeFilter::PREFER_HOST
+                        | vulkano::memory::allocator::MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
                 batch.vertices.len() as u64,

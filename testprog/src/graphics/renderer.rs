@@ -21,7 +21,7 @@ pub struct RenderContext {
     command_buffer_allocator: StandardCommandBufferAllocator,
     current_command_buffer: Option<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
-    current_frame: usize,
+    current_frame: u32,
     current_image: u32,
     camera: Camera,
     config: GraphicsConfig,
@@ -81,13 +81,13 @@ impl RenderContext {
             attachments: {
                 color: {
                     format: swapchain.format(),
-                    samples: config.quality.msaa_samples,
+                    samples: config.msaa_samples,
                     load_op: Clear,
                     store_op: Store,
                 },
                 depth_stencil: {
                     format: vulkano::format::Format::D16_UNORM,
-                    samples: config.quality.msaa_samples,
+                    samples: config.msaa_samples,
                     load_op: Clear,
                     store_op: DontCare,
                 }
@@ -111,7 +111,7 @@ impl RenderContext {
             command_buffer_allocator,
             current_command_buffer: None,
             previous_frame_end: Some(sync::now(graphics_queue.device().clone()).boxed()),
-            current_frame: 0,
+            current_frame: 0_u32,
             current_image: 0,
             camera: Camera::new(&config),
             config,
@@ -199,8 +199,16 @@ impl RenderContext {
         self.current_image = image_index;
 
         let clear_values = vec![
-            Some(self.config.camera.clear_color.into()),
-            Some(1.0.into()),
+            Some(
+                [
+                    self.config.camera.clear_color.x,
+                    self.config.camera.clear_color.y,
+                    self.config.camera.clear_color.z,
+                    self.config.camera.clear_color.w,
+                ]
+                .into(),
+            ),
+            Some([1.0_f32].into()),
         ];
 
         let builder = {

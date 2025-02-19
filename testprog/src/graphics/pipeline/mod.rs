@@ -1,11 +1,16 @@
 mod cache;
 
 use std::sync::Arc;
-use vulkano::device::Device;
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::{GraphicsPipeline, PipelineLayout};
-use vulkano::render_pass::RenderPass;
-use vulkano::shader::ShaderModule;
+use vulkano::{
+    device::Device,
+    pipeline::{
+        graphics::GraphicsPipelineCreateInfo, layout::PipelineLayoutCreateInfo, GraphicsPipeline,
+        PipelineLayout,
+    },
+    render_pass::RenderPass,
+    shader::ShaderModule,
+    VulkanObject,
+};
 
 use crate::core::error::Error;
 pub use cache::{PipelineCache, PipelineCacheStats};
@@ -36,7 +41,11 @@ impl PipelineManager {
     }
 
     pub fn invalidate_shaders(&mut self, modules: &[Arc<ShaderModule>]) {
-        self.cache.invalidate_shaders(modules);
+        let modules_with_entry = modules
+            .iter()
+            .map(|m| (m.clone(), "main"))
+            .collect::<Vec<_>>();
+        self.cache.invalidate_shaders(&modules_with_entry);
     }
 
     pub fn clear_cache(&mut self) {
@@ -60,13 +69,19 @@ pub struct PipelineConfig {
 
 /// Helper for creating common pipeline configurations
 pub struct PipelineBuilder {
+    device: Arc<Device>,
     config: PipelineConfig,
     create_info: GraphicsPipelineCreateInfo,
 }
 
 impl PipelineBuilder {
-    pub fn new(vertex_shader: Arc<ShaderModule>, fragment_shader: Arc<ShaderModule>) -> Self {
+    pub fn new(
+        device: Arc<Device>,
+        vertex_shader: Arc<ShaderModule>,
+        fragment_shader: Arc<ShaderModule>,
+    ) -> Self {
         Self {
+            device: device.clone(),
             config: PipelineConfig {
                 vertex_shader,
                 fragment_shader,
@@ -74,7 +89,9 @@ impl PipelineBuilder {
                 fragment_entry: "main".to_string(),
                 viewport: None,
             },
-            create_info: GraphicsPipelineCreateInfo::default(),
+            create_info: GraphicsPipelineCreateInfo::layout(
+                PipelineLayout::new(device, PipelineLayoutCreateInfo::default()).unwrap(),
+            ),
         }
     }
 
@@ -99,9 +116,15 @@ impl PipelineBuilder {
         layout: Arc<PipelineLayout>,
         render_pass: Arc<RenderPass>,
     ) -> Result<Arc<GraphicsPipeline>, Error> {
-        let shaders = vec![
-            (self.config.vertex_shader, &self.config.vertex_entry),
-            (self.config.fragment_shader, &self.config.fragment_entry),
+        let shaders: Vec<(Arc<ShaderModule>, &str)> = vec![
+            (
+                self.config.vertex_shader.clone(),
+                self.config.vertex_entry.as_str(),
+            ),
+            (
+                self.config.fragment_shader.clone(),
+                self.config.fragment_entry.as_str(),
+            ),
         ];
 
         manager.create_pipeline(

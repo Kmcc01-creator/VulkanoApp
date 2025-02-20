@@ -4,6 +4,7 @@ pub mod commands;
 pub mod config;
 pub mod context;
 pub mod error;
+pub mod helpers;
 pub mod pipeline;
 pub mod render_pass;
 pub mod renderer;
@@ -12,31 +13,23 @@ pub mod swapchain;
 pub mod text;
 
 use ash::vk;
-use std::sync::Arc;
 
 // Re-exports for convenience
-pub use context::Context;
 pub use error::{Result, VulkanError};
 pub use pipeline::Pipeline;
 pub use render_pass::RenderPass;
 pub use renderer::Renderer;
-pub use shader::Shader;
 pub use swapchain::Swapchain;
 
-// Helper functions that are commonly used across the engine
+// Helper functions commonly used across the engine
 pub(crate) mod utils {
     use ash::vk;
-    use std::ffi::CString;
-
-    pub fn to_cstring(s: &str) -> CString {
-        CString::new(s).unwrap()
-    }
 
     pub fn create_buffer(
         device: &ash::Device,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
-        memory_properties: vk::MemoryPropertyFlags,
+        _memory_properties: vk::MemoryPropertyFlags,
     ) -> crate::Result<(vk::Buffer, vk::DeviceMemory)> {
         let buffer_info = vk::BufferCreateInfo::builder()
             .size(size)
@@ -76,7 +69,7 @@ pub(crate) mod utils {
         height: u32,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-        memory_properties: vk::MemoryPropertyFlags,
+        _memory_properties: vk::MemoryPropertyFlags,
     ) -> crate::Result<(vk::Image, vk::DeviceMemory)> {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
@@ -120,4 +113,26 @@ pub(crate) mod utils {
 
         Ok((image, memory))
     }
+
+    pub fn create_shader_module(
+        device: &ash::Device,
+        code: &[u8],
+    ) -> crate::Result<vk::ShaderModule> {
+        let code =
+            unsafe { std::slice::from_raw_parts(code.as_ptr() as *const u32, code.len() / 4) };
+
+        let create_info = vk::ShaderModuleCreateInfo::builder().code(code);
+
+        unsafe {
+            device
+                .create_shader_module(&create_info, None)
+                .map_err(|e| crate::VulkanError::ShaderCreation(e.to_string()))
+        }
+    }
 }
+
+// Re-export all the types needed for text rendering
+pub use text::{
+    ndc_to_pixel, pixel_to_ndc, FontAtlas, TextAlignment, TextConfig, TextElement, TextLayout,
+    TextPicker,
+};

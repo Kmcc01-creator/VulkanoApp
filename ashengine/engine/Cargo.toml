@@ -17,6 +17,7 @@ log = "0.4"
 thiserror = "1.0"
 pretty_env_logger = "0.5"
 bytemuck = { version = "1.13", features = ["derive"] }
+memoffset = "0.9"
 
 [lib]
 name = "ashengine"

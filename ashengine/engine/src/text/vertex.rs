@@ -1,4 +1,5 @@
 use ash::vk;
+use std::mem;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -13,47 +14,42 @@ impl TextVertex {
     pub fn get_binding_description() -> vk::VertexInputBindingDescription {
         vk::VertexInputBindingDescription {
             binding: 0,
-            stride: std::mem::size_of::<TextVertex>() as u32,
+            stride: mem::size_of::<TextVertex>() as u32,
             input_rate: vk::VertexInputRate::VERTEX,
         }
     }
 
     pub fn get_attribute_descriptions() -> [vk::VertexInputAttributeDescription; 4] {
+        let position_offset = memoffset::offset_of!(TextVertex, position) as u32;
+        let tex_coords_offset = memoffset::offset_of!(TextVertex, tex_coords) as u32;
+        let color_offset = memoffset::offset_of!(TextVertex, color) as u32;
+        let element_id_offset = memoffset::offset_of!(TextVertex, element_id) as u32;
+
         [
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 0,
                 format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(TextVertex, position) as u32,
+                offset: position_offset,
             },
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 1,
                 format: vk::Format::R32G32_SFLOAT,
-                offset: offset_of!(TextVertex, tex_coords) as u32,
+                offset: tex_coords_offset,
             },
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 2,
                 format: vk::Format::R32G32B32A32_SFLOAT,
-                offset: offset_of!(TextVertex, color) as u32,
+                offset: color_offset,
             },
             vk::VertexInputAttributeDescription {
                 binding: 0,
                 location: 3,
                 format: vk::Format::R32_UINT,
-                offset: offset_of!(TextVertex, element_id) as u32,
+                offset: element_id_offset,
             },
         ]
     }
-}
-
-#[macro_export]
-macro_rules! offset_of {
-    ($type:ty, $field:ident) => {{
-        let dummy = core::mem::MaybeUninit::<$type>::uninit();
-        let dummy_ptr = dummy.as_ptr();
-        let field_ptr = unsafe { core::ptr::addr_of!((*dummy_ptr).$field) };
-        (field_ptr as usize) - (dummy_ptr as usize)
-    }};
 }

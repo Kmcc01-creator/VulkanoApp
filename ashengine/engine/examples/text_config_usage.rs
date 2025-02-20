@@ -1,81 +1,167 @@
-use ash::vk;
-use std::sync::Arc;
-
 use ashengine::{
-    config::{ConfigLoader, ConfigManager, UIConfig},
-    text::{FontAtlas, TextElement, TextLayout, TextPicker},
+    config::{ConfigLoader, ConfigManager},
+    text::{
+        pixel_to_ndc, FontAtlas, TextAlignment, TextConfig, TextElement, TextLayout, TextPicker,
+        TextResult,
+    },
+    Context, Result,
+};
+use std::sync::Arc;
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize config system
+fn main() -> Result<()> {
+    // Initialize window and event loop
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("Text Configuration Example")
+        .with_inner_size(winit::dpi::LogicalSize::new(800, 600))
+        .build(&event_loop)?;
+
+    // Initialize Vulkan context
+    let context = Context::new(Some(&window))?;
+    let device = context.device();
+
+    // Initialize configuration system
     let config_manager = Arc::new(ConfigManager::new());
-    let mut config_loader = ConfigLoader::new(Arc::clone(&config_manager))?;
+    let mut config_loader = ConfigLoader::new(config_manager.clone())?;
 
-    // Load UI configuration
-    config_loader.load_config("examples/ui_config.ron")?;
+    // Load text configuration
+    config_loader.load_config("examples/text_blocks.ron")?;
 
-    // Enable hot-reloading of configs
-    config_loader.enable_hot_reload()?;
+    // Initialize text rendering components
+    let font_atlas = FontAtlas::new(device.clone(), 512, 512)?;
+    let mut text_layout = TextLayout::new();
+    let text_picker = TextPicker::new(device.clone())?;
 
-    // Get UI configuration
-    let ui_config = config_manager
-        .get::<UIConfig>("ui")
-        .expect("UI config not found");
-    let ui_config = ui_config.read().unwrap();
+    // Create text configuration
+    let text_config = TextConfig {
+        font_size: 24.0,
+        line_height: 1.5,
+        letter_spacing: 0.1,
+        alignment: TextAlignment::Left,
+        color: [1.0, 1.0, 1.0, 1.0],
+    };
 
-    // Create text elements with configured properties
-    let text_elements = vec![
+    // Create text elements
+    let mut text_elements = vec![
         TextElement {
-            text: "Hello World".to_string(),
-            position: [10.0, 10.0],
-            color: ui_config.themes["default"].colors["text"],
-            scale: ui_config.text.font_size / 32.0, // Normalize to SDF font size
+            text: "Welcome to Text Configuration Demo".to_string(),
+            position: pixel_to_ndc(50.0, 50.0, 800.0, 600.0),
+            color: [1.0, 1.0, 1.0, 1.0],
+            scale: text_config.font_size / 32.0,
             element_id: 1,
         },
         TextElement {
-            text: "Click me!".to_string(),
-            position: [10.0, 50.0],
-            color: ui_config.themes["default"].colors["primary"],
-            scale: ui_config.text.font_size / 32.0,
+            text: "Click any text to select it".to_string(),
+            position: pixel_to_ndc(50.0, 100.0, 800.0, 600.0),
+            color: [0.2, 0.6, 1.0, 1.0],
+            scale: text_config.font_size / 32.0,
             element_id: 2,
         },
     ];
 
-    // Initialize text rendering components
-    let font_atlas = FontAtlas::new(
-        device.clone(), // device would be your vulkan device
-        512,            // atlas width
-        512,            // atlas height
-    )?;
-
-    let mut text_layout = TextLayout::new();
-
-    // Apply layout with configured padding
-    let layout_config = &ui_config.layout;
+    // Layout text elements
     text_layout.layout_text(&text_elements, &font_atlas);
 
-    // Setup text picker with configured properties
-    let text_picker = TextPicker::new(device.clone())?;
+    // Create necessary buffers
+    let vertex_buffer = create_vertex_buffer(device.as_ref(), text_layout.vertices())?;
+    let index_buffer = create_index_buffer(device.as_ref(), text_layout.indices())?;
+    let bbox_buffer = create_storage_buffer(device.as_ref(), text_layout.bounding_boxes())?;
 
-    // Example of handling text selection
-    let ray_origin = [100.0, 100.0]; // Mouse position
-    let ray_direction = [1.0, 0.0]; // Ray direction
+    // Create renderer (assuming you have a renderer implementation)
+    let mut renderer = Renderer::new(context)?;
+
+    // Main event loop
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
+
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {
+                let size = window.inner_size();
+                let x = position.x as f32 / size.width as f32;
+                let y = position.y as f32 / size.height as f32;
+
+                // Test for intersection
+                test_intersection(&text_picker, &renderer, bbox_buffer, [x, y]);
+            }
+
+            Event::RedrawRequested(_) => {
+                if let Err(e) =
+                    render_frame(&mut renderer, &text_layout, vertex_buffer, index_buffer)
+                {
+                    eprintln!("Render error: {}", e);
+                    *control_flow = ControlFlow::Exit;
+                }
+            }
+
+            Event::MainEventsCleared => {
+                window.request_redraw();
+            }
+
+            _ => (),
+        }
+    });
+}
+
+fn test_intersection(
+    text_picker: &TextPicker,
+    renderer: &Renderer,
+    bbox_buffer: vk::Buffer,
+    cursor_pos: [f32; 2],
+) {
+    let result_buffer = create_storage_buffer(renderer.device(), &[0u32, 0.0f32]).unwrap();
 
     text_picker.test_intersection(
-        command_buffer, // Your command buffer
-        bbox_buffer,    // Buffer containing text bounding boxes
-        result_buffer,  // Buffer for storing intersection result
-        descriptor_set, // Descriptor set for the compute shader
-        ray_origin,
-        ray_direction,
-        text_elements.len() as u32,
+        renderer.current_command_buffer(),
+        bbox_buffer,
+        result_buffer,
+        renderer.descriptor_sets()[0],
+        cursor_pos,
+        [0.0, 1.0],
+        2, // Number of text elements
     );
+}
 
-    // Example of updating configuration at runtime
-    config_manager.update("ui", |config: &mut UIConfig| {
-        config.text.font_size = 20.0;
-        config.active_theme = "light".to_string();
-    });
+fn render_frame(
+    renderer: &mut Renderer,
+    text_layout: &TextLayout,
+    vertex_buffer: vk::Buffer,
+    index_buffer: vk::Buffer,
+) -> Result<()> {
+    renderer.begin_frame()?;
 
+    // Record draw commands
+    let command_buffer = renderer.current_command_buffer();
+
+    unsafe {
+        renderer
+            .device()
+            .cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer], &[0]);
+
+        renderer.device().cmd_bind_index_buffer(
+            command_buffer,
+            index_buffer,
+            0,
+            vk::IndexType::UINT32,
+        );
+
+        renderer
+            .device()
+            .cmd_draw_indexed(command_buffer, text_layout.index_count(), 1, 0, 0, 0);
+    }
+
+    renderer.end_frame()?;
     Ok(())
 }

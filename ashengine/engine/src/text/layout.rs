@@ -1,7 +1,31 @@
 use crate::error::Result;
-use crate::text::{BoundingBox, FontAtlas, GlyphInfo, Rect, TextElement, TextVertex};
+use crate::text::atlas::{FontAtlas, GlyphInfo};
+use crate::text::vertex::TextVertex;
 use ash::vk;
 use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub struct BoundingBox {
+    pub rect: Rect,
+    pub element_id: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextElement {
+    pub text: String,
+    pub position: [f32; 2],
+    pub color: [f32; 4],
+    pub scale: f32,
+    pub element_id: u32,
+}
 
 pub struct TextLayout {
     vertices: Vec<TextVertex>,
@@ -32,8 +56,8 @@ impl TextLayout {
         for element in text_elements {
             let mut cursor_x = element.position[0];
             let cursor_y = element.position[1];
-            let mut element_width = 0.0;
-            let mut element_height = 0.0;
+            let mut element_width = 0.0_f32;
+            let mut element_height = 0.0_f32;
 
             // First pass: calculate bounding box
             for c in element.text.chars() {

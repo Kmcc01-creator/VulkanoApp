@@ -80,6 +80,15 @@ pub enum VulkanError {
     #[error("Invalid shader file: {0}")]
     InvalidShader(String),
 
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    #[error("No suitable GPU found")]
+    NoSuitableGpu,
+
+    #[error("Synchronization error: {0}")]
+    SyncError(String),
+
     #[error("General error: {0}")]
     General(String),
 }

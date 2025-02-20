@@ -1,7 +1,22 @@
 use crate::error::{Result, VulkanError};
-use crate::text::{GlyphMetrics, Rect};
 use ash::{vk, Device};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use super::layout::Rect;
+
+#[derive(Debug, Clone, Copy)]
+pub struct GlyphMetrics {
+    pub advance: f32,
+    pub bearing: [f32; 2],
+    pub size: [f32; 2],
+}
+
+#[derive(Debug, Clone)]
+pub struct GlyphInfo {
+    pub uv_rect: Rect,
+    pub metrics: GlyphMetrics,
+}
 
 pub struct FontAtlas {
     texture: vk::Image,
@@ -11,12 +26,6 @@ pub struct FontAtlas {
     extent: vk::Extent2D,
     glyph_data: HashMap<char, GlyphInfo>,
     device: Arc<Device>,
-}
-
-#[derive(Debug, Clone)]
-pub struct GlyphInfo {
-    pub uv_rect: Rect,
-    pub metrics: GlyphMetrics,
 }
 
 impl FontAtlas {
@@ -126,8 +135,8 @@ impl FontAtlas {
         })
     }
 
-    pub fn add_glyph(&mut self, c: char, info: GlyphInfo) {
-        self.glyph_data.insert(c, info);
+    pub fn add_glyph(&mut self, c: char, uv_rect: Rect, metrics: GlyphMetrics) {
+        self.glyph_data.insert(c, GlyphInfo { uv_rect, metrics });
     }
 
     pub fn get_glyph(&self, c: char) -> Option<&GlyphInfo> {

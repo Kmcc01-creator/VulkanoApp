@@ -1,19 +1,20 @@
 use crate::error::{Result, VulkanError};
 use ash::{vk, Device};
+use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PushConstants {
+    ray_origin: [f32; 2],
+    ray_direction: [f32; 2],
+}
 
 pub struct TextPicker {
     compute_pipeline: vk::Pipeline,
     pipeline_layout: vk::PipelineLayout,
     descriptor_set_layout: vk::DescriptorSetLayout,
     device: Arc<Device>,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-struct PushConstants {
-    ray_origin: [f32; 2],
-    ray_direction: [f32; 2],
 }
 
 impl TextPicker {
@@ -126,12 +127,19 @@ impl TextPicker {
             );
 
             // Push ray constants
+            let push_constants_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    (&push_constants as *const PushConstants) as *const u8,
+                    std::mem::size_of::<PushConstants>(),
+                )
+            };
+
             self.device.cmd_push_constants(
                 command_buffer,
                 self.pipeline_layout,
                 vk::ShaderStageFlags::COMPUTE,
                 0,
-                std::slice::from_ref(&push_constants),
+                push_constants_bytes,
             );
 
             // Dispatch compute shader

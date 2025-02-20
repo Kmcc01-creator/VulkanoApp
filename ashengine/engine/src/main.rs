@@ -19,7 +19,7 @@ use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::sync::Arc;
 use winit::{
     event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
     window::WindowBuilder,
 };
 
@@ -31,11 +31,12 @@ struct Engine {
 }
 
 impl Engine {
-    fn new(window: &(impl HasRawWindowHandle + HasRawDisplayHandle)) -> Result<Self> {
+    fn new(
+        window: &(impl HasRawWindowHandle + HasRawDisplayHandle),
+        dimensions: [u32; 2],
+    ) -> Result<Self> {
         let context = Arc::new(VulkanContext::new(window)?);
         info!("Created Vulkan context");
-
-        let dimensions = window.inner_size();
         let device = Arc::new(context.device().clone());
         let swapchain = Swapchain::new(
             context.physical_device(),
@@ -43,7 +44,7 @@ impl Engine {
             context.instance(),
             context.surface_loader(),
             context.surface(),
-            [dimensions.width, dimensions.height],
+            dimensions,
         )?;
         info!("Created swapchain");
 
@@ -82,6 +83,28 @@ impl Engine {
     fn cleanup(&mut self) -> Result<()> {
         self.renderer.wait_idle()
     }
+
+    fn recreate_swapchain(&mut self, dimensions: [u32; 2]) -> Result<()> {
+        let ctx = &self._context;
+        self.swapchain.recreate(
+            ctx.physical_device(),
+            Arc::new(ctx.device().clone()),
+            ctx.instance(),
+            ctx.surface_loader(),
+            ctx.surface(),
+            dimensions,
+        )?;
+
+        // We also need to recreate the renderer's resources that depend on the swapchain
+        self.renderer = Renderer::new(
+            Arc::new(ctx.device().clone()),
+            &self.swapchain,
+            &self.shader_set,
+            0,
+        )?;
+
+        Ok(())
+    }
 }
 
 impl Drop for Engine {
@@ -96,51 +119,63 @@ fn main() -> Result<()> {
 
     let event_loop = EventLoop::new();
     info!("Created event loop");
-
+    let window_width = 800;
+    let window_height = 600;
     let window = WindowBuilder::new()
         .with_title("Vulkan Engine")
-        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
+        .with_inner_size(winit::dpi::LogicalSize::new(
+            window_width as f64,
+            window_height as f64,
+        ))
         .build(&event_loop)
         .unwrap();
     info!("Created window");
 
-    let mut engine = Engine::new(&window)?;
+    let mut engine = Engine::new(&window, [window_width, window_height])?;
     let mut minimized = false;
 
+    // Since run() takes ownership of the event loop and never returns,
+    // we need to handle cleanup before it runs
+    let mut window_size = [window_width, window_height];
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
 
         match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                info!("Window close requested");
-                if let Err(e) = engine.cleanup() {
-                    eprintln!("Failed to cleanup engine: {}", e);
+            Event::WindowEvent { event, .. } => match event {
+                WindowEvent::CloseRequested => {
+                    info!("Window close requested");
+                    if let Err(e) = engine.cleanup() {
+                        eprintln!("Failed to cleanup engine: {}", e);
+                    }
+                    *control_flow = ControlFlow::Exit;
                 }
-                *control_flow = ControlFlow::Exit;
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(size),
-                ..
-            } => {
-                if size.width == 0 || size.height == 0 {
-                    minimized = true;
-                } else {
-                    minimized = false;
-                    // TODO: Handle resizing
+                WindowEvent::Resized(size) => {
+                    let width = size.width as u32;
+                    let height = size.height as u32;
+                    if width == 0 || height == 0 {
+                        minimized = true;
+                    } else {
+                        minimized = false;
+                        window_size = [width, height];
+                        if let Err(e) = engine.recreate_swapchain(window_size) {
+                            eprintln!("Failed to recreate swapchain: {}", e);
+                            *control_flow = ControlFlow::Exit;
+                        }
+                    }
                 }
-            }
+                _ => (),
+            },
             Event::MainEventsCleared => {
                 if !minimized {
-                    match engine.render_frame(
-                        engine._context.graphics_queue(),
-                        engine._context.present_queue(),
-                    ) {
+                    let ctx = &engine._context;
+                    match engine.render_frame(ctx.graphics_queue(), ctx.present_queue()) {
                         Ok(needs_recreation) => {
                             if needs_recreation {
-                                // TODO: Handle swapchain recreation
+                                // For suboptimal/out-of-date swapchains, recreate with current window size
+                                if let Err(e) = engine.recreate_swapchain(window_size) {
+                                    eprintln!("Failed to recreate swapchain: {}", e);
+                                    *control_flow = ControlFlow::Exit;
+                                }
                             }
                         }
                         Err(e) => {
@@ -152,8 +187,5 @@ fn main() -> Result<()> {
             }
             _ => (),
         }
-    });
-
-    #[allow(unreachable_code)]
-    Ok(())
+    })
 }

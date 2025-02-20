@@ -4,6 +4,14 @@
 
 AshEngine is a modern Vulkan-based graphics engine written in Rust, designed to provide high-performance rendering capabilities with a clean and safe API.
 
+## Recent Improvements
+
+- **Window Management**: Implemented robust window resizing support
+  - Proper swapchain recreation during window resize events
+  - Automatic content scaling with window dimensions
+  - Efficient handling of window maximize/minimize operations
+  - Surface capabilities awareness for different display configurations
+
 ## Project Goals
 
 - Create a robust, safe, and performant graphics engine using Vulkan
@@ -11,6 +19,23 @@ AshEngine is a modern Vulkan-based graphics engine written in Rust, designed to 
 - Maintain excellent documentation and examples
 - Support modern rendering techniques and best practices
 - Ensure proper resource management and safety through Rust's ownership system
+
+## Future Development
+
+- **Compute Shader Integration**: Planning to add compute shader support for:
+  - Particle systems and physics simulations
+  - Post-processing effects
+  - General-purpose GPU computing (GPGPU) tasks
+  - Real-time ray tracing acceleration
+- **Advanced Rendering Features**:
+  - Multiple render passes for advanced effects
+  - Deferred rendering support
+  - Dynamic lighting system
+  - PBR material system
+- **Performance Optimizations**:
+  - Command buffer reuse strategies
+  - Dynamic resource allocation
+  - Async compute capabilities
 
 ## Technical Implementation
 

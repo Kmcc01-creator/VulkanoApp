@@ -61,17 +61,13 @@ impl ShaderModule {
             .name(MAIN_ENTRY_POINT)
             .build()
     }
-
-    pub fn destroy(&mut self) {
-        unsafe {
-            self.device.destroy_shader_module(self.module, None);
-        }
-    }
 }
 
 impl Drop for ShaderModule {
     fn drop(&mut self) {
-        self.destroy();
+        unsafe {
+            self.device.destroy_shader_module(self.module, None);
+        }
     }
 }
 
@@ -118,21 +114,13 @@ impl ShaderSet {
         }
         Ok(())
     }
-
-    pub fn destroy(&mut self) {
-        if let Ok(_) = self.wait_idle() {
-            if let Some(mut vertex) = self.vertex.take() {
-                vertex.destroy();
-            }
-            if let Some(mut fragment) = self.fragment.take() {
-                fragment.destroy();
-            }
-        }
-    }
 }
 
 impl Drop for ShaderSet {
     fn drop(&mut self) {
-        self.destroy();
+        if let Ok(_) = self.wait_idle() {
+            self.vertex.take();
+            self.fragment.take();
+        }
     }
 }

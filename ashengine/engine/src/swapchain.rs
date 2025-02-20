@@ -192,6 +192,123 @@ impl Swapchain {
     pub fn image_views(&self) -> &[vk::ImageView] {
         &self.image_views
     }
+
+    pub fn recreate(
+        &mut self,
+        physical_device: vk::PhysicalDevice,
+        device: Arc<Device>,
+        instance: &Instance,
+        surface_loader: &khr::Surface,
+        surface: vk::SurfaceKHR,
+        dimensions: [u32; 2],
+    ) -> Result<()> {
+        // Wait for the device to be idle before recreating
+        unsafe {
+            self.device
+                .device_wait_idle()
+                .map_err(|e| VulkanError::SyncError(e.to_string()))?;
+        }
+
+        // Clean up old image views
+        unsafe {
+            for &image_view in &self.image_views {
+                self.device.destroy_image_view(image_view, None);
+            }
+        }
+
+        // Get new surface capabilities
+        let capabilities = unsafe {
+            surface_loader
+                .get_physical_device_surface_capabilities(physical_device, surface)
+                .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))?
+        };
+
+        // Calculate new extent
+        let new_extent = if capabilities.current_extent.width != u32::MAX {
+            capabilities.current_extent
+        } else {
+            vk::Extent2D {
+                width: dimensions[0].clamp(
+                    capabilities.min_image_extent.width,
+                    capabilities.max_image_extent.width,
+                ),
+                height: dimensions[1].clamp(
+                    capabilities.min_image_extent.height,
+                    capabilities.max_image_extent.height,
+                ),
+            }
+        };
+
+        // Create new swapchain
+        let create_info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(surface)
+            .min_image_count(capabilities.min_image_count + 1)
+            .image_format(self.surface_format.format)
+            .image_color_space(self.surface_format.color_space)
+            .image_extent(new_extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .pre_transform(capabilities.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(vk::PresentModeKHR::FIFO)
+            .clipped(true)
+            .old_swapchain(self.swapchain);
+
+        let new_swapchain = unsafe {
+            self.swapchain_loader
+                .create_swapchain(&create_info, None)
+                .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))?
+        };
+
+        // Clean up old swapchain
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None);
+        }
+
+        self.swapchain = new_swapchain;
+        self.extent = new_extent;
+
+        // Get new swapchain images and create new image views
+        let images = unsafe {
+            self.swapchain_loader
+                .get_swapchain_images(self.swapchain)
+                .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))?
+        };
+
+        let image_views: Vec<_> = images
+            .iter()
+            .map(|&image| {
+                let create_info = vk::ImageViewCreateInfo::builder()
+                    .image(image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(self.surface_format.format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    });
+                unsafe {
+                    device
+                        .create_image_view(&create_info, None)
+                        .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        self.images = images;
+        self.image_views = image_views;
+
+        Ok(())
+    }
 }
 
 impl Drop for Swapchain {

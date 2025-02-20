@@ -6,6 +6,12 @@ AshEngine is a modern Vulkan-based graphics engine written in Rust, designed to 
 
 ## Recent Improvements
 
+- **Configuration System**: Implemented flexible, hot-reloadable configuration management
+  - Type-safe configuration handling
+  - Real-time configuration updates
+  - Modular configuration system for different engine components
+  - Extensive theme support for UI elements
+  - Thread-safe configuration access
 - **Window Management**: Implemented robust window resizing support
   - Proper swapchain recreation during window resize events
   - Automatic content scaling with window dimensions
@@ -46,6 +52,7 @@ The engine is built on several core components:
 - [Memory Management](./technical/MemoryManagement.md) - Details buffer and image memory allocation
 - [Command System](./technical/Commands.md) - Explains command buffer recording and submission
 - [Synchronization](./technical/Synchronization.md) - Covers frame synchronization and resource access
+- [Configuration System](./technical/Configuration.md) - Details the flexible configuration management system
 - [AI Integration](./AIHandling.md) - Information about AI features and capabilities
 
 ## Getting Started
@@ -62,6 +69,7 @@ The engine is built on several core components:
 - [Creating Materials](./howto/Materials.md)
 - [Scene Management](./howto/SceneManagement.md)
 - [Performance Optimization](./howto/Performance.md)
+- [Configuration Management](./howto/Configuration.md)
 
 ## API Reference
 
@@ -69,6 +77,7 @@ The engine is built on several core components:
 - [Graphics Pipeline](./api/Pipeline.md)
 - [Resource Management](./api/Resources.md)
 - [Utility Functions](./api/Utils.md)
+- [Configuration API](./api/Configuration.md)
 
 ## Examples
 
@@ -76,6 +85,19 @@ The engine is built on several core components:
 - [Textured Cube](./examples/TexturedCube.md)
 - [Dynamic Lighting](./examples/DynamicLighting.md)
 - [Multiple Renderpasses](./examples/MultipleRenderpasses.md)
+- [UI Configuration](./examples/UIConfiguration.md)
+
+## Configuration
+
+The engine uses a flexible configuration system that allows for:
+
+- Hot-reloading of settings during development
+- Type-safe configuration management
+- Modular configuration for different engine components
+- Theme support for UI elements
+- Thread-safe configuration access
+
+See the [Configuration System](./technical/Configuration.md) documentation for detailed information.
 
 ## Contributing
 

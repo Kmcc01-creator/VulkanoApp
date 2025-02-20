@@ -1,0 +1,49 @@
+(
+    // Global text settings
+    text_settings: (
+        default_font: "Arial",
+        font_size: 16.0,
+        line_height: 1.2,
+        letter_spacing: 0.0,
+        sdf_settings: (
+            smoothing: 0.125,
+            thickness: 0.5,
+            padding: 4.0,
+        ),
+    ),
+    // Theme settings
+    theme: (
+        colors: {
+            "default": [1.0, 1.0, 1.0, 1.0],
+            "highlight": [0.2, 0.6, 1.0, 1.0],
+            "warning": [1.0, 0.6, 0.2, 1.0],
+        },
+    ),
+    // Text blocks
+    blocks: [
+        (
+            id: "textA",
+            content: "This is Text Block A",
+            position: [50.0, 50.0],
+            color: "default",
+            scale: 1.0,
+            selectable: true,
+        ),
+        (
+            id: "textB",
+            content: "This is Text Block B",
+            position: [50.0, 100.0],
+            color: "highlight",
+            scale: 1.2,
+            selectable: true,
+        ),
+        (
+            id: "textC",
+            content: "This is Text Block C",
+            position: [50.0, 150.0],
+            color: "warning",
+            scale: 1.0,
+            selectable: false,
+        ),
+    ],
+)

@@ -1,5 +1,6 @@
+use crate::context::Context;
 use crate::error::{Result, VulkanError};
-use ash::{vk, Device};
+use ash::vk;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -25,11 +26,12 @@ pub struct FontAtlas {
     memory: vk::DeviceMemory,
     extent: vk::Extent2D,
     glyph_data: HashMap<char, GlyphInfo>,
-    device: Arc<Device>,
+    context: Arc<Context>,
 }
 
 impl FontAtlas {
-    pub fn new(device: Arc<Device>, width: u32, height: u32) -> Result<Self> {
+    pub fn new(context: Arc<Context>, width: u32, height: u32) -> Result<Self> {
+        let device = context.device();
         let extent = vk::Extent2D { width, height };
 
         // Create texture image
@@ -57,11 +59,27 @@ impl FontAtlas {
 
         // Allocate and bind memory
         let mem_requirements = unsafe { device.get_image_memory_requirements(texture) };
-        let memory_type = vk::MemoryPropertyFlags::DEVICE_LOCAL;
+        let memory_properties = unsafe {
+            context
+                .instance()
+                .get_physical_device_memory_properties(context.physical_device())
+        };
+
+        // Find suitable memory type index
+        let memory_type_index = (0..memory_properties.memory_type_count)
+            .find(|i| {
+                let suitable = (mem_requirements.memory_type_bits & (1 << i)) != 0;
+                let memory_type = memory_properties.memory_types[*i as usize];
+                suitable
+                    && memory_type
+                        .property_flags
+                        .contains(vk::MemoryPropertyFlags::DEVICE_LOCAL)
+            })
+            .ok_or(VulkanError::NoSuitableMemoryType)?;
 
         let alloc_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
-            .memory_type_index(0); // You'll need to find proper memory type index
+            .memory_type_index(memory_type_index);
 
         let memory = unsafe {
             device
@@ -131,7 +149,7 @@ impl FontAtlas {
             memory,
             extent,
             glyph_data: HashMap::new(),
-            device,
+            context,
         })
     }
 
@@ -158,11 +176,12 @@ impl FontAtlas {
 
 impl Drop for FontAtlas {
     fn drop(&mut self) {
+        let device = self.context.device();
         unsafe {
-            self.device.destroy_sampler(self.sampler, None);
-            self.device.destroy_image_view(self.view, None);
-            self.device.destroy_image(self.texture, None);
-            self.device.free_memory(self.memory, None);
+            device.destroy_sampler(self.sampler, None);
+            device.destroy_image_view(self.view, None);
+            device.destroy_image(self.texture, None);
+            device.free_memory(self.memory, None);
         }
     }
 }

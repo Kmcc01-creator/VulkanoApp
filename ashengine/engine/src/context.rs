@@ -1,5 +1,6 @@
 use ash::{vk, Device, Entry, Instance};
-use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+use ash_window;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use std::ffi::CString;
 use std::sync::Arc;
 use winit::window::Window;
@@ -22,10 +23,13 @@ impl Context {
         let entry = unsafe { Entry::load()? };
 
         // Create instance
+        let app_name = CString::new("AshEngine")?;
+        let engine_name = CString::new("AshEngine")?;
+
         let app_info = vk::ApplicationInfo::builder()
-            .application_name(CString::new("AshEngine")?.as_c_str())
+            .application_name(app_name.as_c_str())
             .application_version(vk::make_api_version(0, 1, 0, 0))
-            .engine_name(CString::new("AshEngine")?.as_c_str())
+            .engine_name(engine_name.as_c_str())
             .engine_version(vk::make_api_version(0, 1, 0, 0))
             .api_version(vk::API_VERSION_1_2);
 
@@ -58,31 +62,14 @@ impl Context {
 
         // Create surface if window is provided
         let (surface, surface_loader) = if let Some(window) = window {
-            let surface = unsafe {
-                match window.raw_display_handle() {
-                    RawDisplayHandle::Windows(_) => {
-                        #[cfg(target_os = "windows")]
-                        {
-                            let win32_surface =
-                                ash::extensions::khr::Win32Surface::new(&entry, &instance);
-                            win32_surface.create_win32_surface(
-                                &vk::Win32SurfaceCreateInfoKHR::builder()
-                                    .hinstance(window.raw_display_handle().unwrap())
-                                    .hwnd(window.raw_window_handle().unwrap()),
-                                None,
-                            )
-                        }
-                        #[cfg(not(target_os = "windows"))]
-                        {
-                            Err(vk::Result::ERROR_EXTENSION_NOT_PRESENT)
-                        }
-                    }
-                    _ => Err(vk::Result::ERROR_EXTENSION_NOT_PRESENT),
-                }
-                .map_err(|e| VulkanError::SurfaceCreation(e.to_string()))?
-            };
-
             let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+            let display_handle = window.raw_display_handle();
+            let window_handle = window.raw_window_handle();
+
+            let surface = unsafe {
+                ash_window::create_surface(&entry, &instance, display_handle, window_handle, None)
+                    .map_err(|e| VulkanError::SurfaceCreation(e.to_string()))?
+            };
             (surface, surface_loader)
         } else {
             (
@@ -171,6 +158,14 @@ impl Context {
 
     pub fn graphics_queue(&self) -> vk::Queue {
         self.graphics_queue
+    }
+
+    pub fn instance(&self) -> &Instance {
+        &self.instance
+    }
+
+    pub fn surface_loader(&self) -> &ash::extensions::khr::Surface {
+        &self.surface_loader
     }
 }
 

@@ -1,3 +1,5 @@
+use ash::LoadingError;
+use std::ffi::NulError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -86,6 +88,9 @@ pub enum VulkanError {
     #[error("No suitable GPU found")]
     NoSuitableGpu,
 
+    #[error("No suitable memory type found")]
+    NoSuitableMemoryType,
+
     #[error("Synchronization error: {0}")]
     SyncError(String),
 
@@ -94,3 +99,15 @@ pub enum VulkanError {
 }
 
 pub type Result<T> = std::result::Result<T, VulkanError>;
+
+impl From<LoadingError> for VulkanError {
+    fn from(e: LoadingError) -> Self {
+        VulkanError::General(e.to_string())
+    }
+}
+
+impl From<NulError> for VulkanError {
+    fn from(e: NulError) -> Self {
+        VulkanError::General(e.to_string())
+    }
+}

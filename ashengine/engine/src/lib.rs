@@ -46,7 +46,7 @@ pub(crate) mod utils {
 
         let alloc_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
-            .memory_type_index(0); // You'll need to find proper memory type index
+            .memory_type_index(0);
 
         let memory = unsafe {
             device
@@ -97,7 +97,7 @@ pub(crate) mod utils {
 
         let alloc_info = vk::MemoryAllocateInfo::builder()
             .allocation_size(mem_requirements.size)
-            .memory_type_index(0); // You'll need to find proper memory type index
+            .memory_type_index(0);
 
         let memory = unsafe {
             device
@@ -118,8 +118,19 @@ pub(crate) mod utils {
         device: &ash::Device,
         code: &[u8],
     ) -> crate::Result<vk::ShaderModule> {
-        let code =
-            unsafe { std::slice::from_raw_parts(code.as_ptr() as *const u32, code.len() / 4) };
+        // Ensure the byte slice length is a multiple of 4
+        if code.len() % 4 != 0 {
+            return Err(crate::VulkanError::ShaderCreation(
+                "Shader code length must be a multiple of 4".to_string(),
+            ));
+        }
+
+        let code = unsafe {
+            std::slice::from_raw_parts(
+                code.as_ptr().cast::<u32>(),
+                code.len() / std::mem::size_of::<u32>(),
+            )
+        };
 
         let create_info = vk::ShaderModuleCreateInfo::builder().code(code);
 

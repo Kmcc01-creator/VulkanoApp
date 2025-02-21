@@ -12,34 +12,56 @@ impl Pipeline {
     pub fn new(
         device: Arc<Device>,
         render_pass: vk::RenderPass,
-        shader_stages: &[vk::PipelineShaderStageCreateInfo],
         extent: vk::Extent2D,
+        vert_code: &[u8],
+        frag_code: &[u8],
     ) -> Result<Self> {
-        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+        let vert_shader_module = crate::utils::create_shader_module(&device, vert_code)?;
+        let frag_shader_module = crate::utils::create_shader_module(&device, frag_code)?;
 
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
+        let main_function_name = std::ffi::CString::new("main").unwrap();
+
+        let shader_stages = [
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vert_shader_module)
+                .name(&main_function_name)
+                .build(),
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(frag_shader_module)
+                .name(&main_function_name)
+                .build(),
+        ];
+
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+        let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
 
-        let viewport = vk::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: extent.width as f32,
-            height: extent.height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        };
+        let viewport = vk::Viewport::builder()
+            .x(0.0)
+            .y(0.0)
+            .width(extent.width as f32)
+            .height(extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0)
+            .build();
 
-        let scissor = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent,
-        };
+        let scissor = vk::Rect2D::builder()
+            .offset(vk::Offset2D { x: 0, y: 0 })
+            .extent(extent)
+            .build();
+
+        // Store viewports and scissors in vectors to maintain their lifetime
+        let viewports = [viewport];
+        let scissors = [scissor];
 
         let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-            .viewports(std::slice::from_ref(&viewport))
-            .scissors(std::slice::from_ref(&scissor));
+            .viewports(&viewports)
+            .scissors(&scissors);
 
-        let rasterizer = vk::PipelineRasterizationStateCreateInfo::builder()
+        let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
             .depth_clamp_enable(false)
             .rasterizer_discard_enable(false)
             .polygon_mode(vk::PolygonMode::FILL)
@@ -48,47 +70,37 @@ impl Pipeline {
             .front_face(vk::FrontFace::CLOCKWISE)
             .depth_bias_enable(false);
 
-        let multisampling = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisampling_info = vk::PipelineMultisampleStateCreateInfo::builder()
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
-        let color_blend_attachment = vk::PipelineColorBlendAttachmentState {
-            blend_enable: vk::TRUE,
-            src_color_blend_factor: vk::BlendFactor::SRC_ALPHA,
-            dst_color_blend_factor: vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
-            color_blend_op: vk::BlendOp::ADD,
-            src_alpha_blend_factor: vk::BlendFactor::ONE,
-            dst_alpha_blend_factor: vk::BlendFactor::ZERO,
-            alpha_blend_op: vk::BlendOp::ADD,
-            color_write_mask: vk::ColorComponentFlags::from_raw(
-                vk::ColorComponentFlags::R.as_raw()
-                    | vk::ColorComponentFlags::G.as_raw()
-                    | vk::ColorComponentFlags::B.as_raw()
-                    | vk::ColorComponentFlags::A.as_raw(),
-            ),
-        };
+        let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(false)
+            .build();
 
-        let color_blending = vk::PipelineColorBlendStateCreateInfo::builder()
+        // Store color blend attachments in a vector
+        let color_blend_attachments = [color_blend_attachment];
+
+        let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
             .logic_op_enable(false)
-            .attachments(std::slice::from_ref(&color_blend_attachment));
+            .attachments(&color_blend_attachments);
 
-        // Create pipeline layout
         let layout_info = vk::PipelineLayoutCreateInfo::builder();
-
         let layout = unsafe {
             device
                 .create_pipeline_layout(&layout_info, None)
-                .map_err(|e| VulkanError::PipelineCreation(e.to_string()))?
+                .map_err(|e| VulkanError::PipelineLayoutCreation(e.to_string()))?
         };
 
-        let create_info = vk::GraphicsPipelineCreateInfo::builder()
-            .stages(shader_stages)
+        let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
+            .stages(&shader_stages)
             .vertex_input_state(&vertex_input_info)
-            .input_assembly_state(&input_assembly)
+            .input_assembly_state(&input_assembly_info)
             .viewport_state(&viewport_state)
-            .rasterization_state(&rasterizer)
-            .multisample_state(&multisampling)
-            .color_blend_state(&color_blending)
+            .rasterization_state(&rasterizer_info)
+            .multisample_state(&multisampling_info)
+            .color_blend_state(&color_blend_info)
             .layout(layout)
             .render_pass(render_pass)
             .subpass(0);
@@ -97,11 +109,16 @@ impl Pipeline {
             device
                 .create_graphics_pipelines(
                     vk::PipelineCache::null(),
-                    std::slice::from_ref(&create_info),
+                    &[pipeline_info.build()],
                     None,
                 )
                 .map_err(|e| VulkanError::PipelineCreation(e.1.to_string()))?[0]
         };
+
+        unsafe {
+            device.destroy_shader_module(vert_shader_module, None);
+            device.destroy_shader_module(frag_shader_module, None);
+        }
 
         Ok(Self {
             pipeline,
@@ -120,12 +137,12 @@ impl Pipeline {
         }
     }
 
-    pub fn handle(&self) -> vk::Pipeline {
-        self.pipeline
-    }
-
     pub fn layout(&self) -> vk::PipelineLayout {
         self.layout
+    }
+
+    pub fn pipeline(&self) -> vk::Pipeline {
+        self.pipeline
     }
 }
 

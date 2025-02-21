@@ -1,6 +1,6 @@
 use super::{Config, ConfigManager, UIConfig};
 use crate::error::{Result, VulkanError};
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use ron::de::from_reader;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -56,7 +56,7 @@ impl ConfigLoader {
 
         let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             if let Ok(event) = res {
-                if let Event::Modify(_) = event {
+                if matches!(event.kind, notify::EventKind::Modify(_)) {
                     let _ = tx.send(event);
                 }
             }
@@ -77,8 +77,13 @@ impl ConfigLoader {
         // Spawn thread to handle config reloading
         std::thread::spawn(move || {
             while let Ok(event) = rx.recv() {
-                if let Event::Modify(e) = event {
-                    for path in e.paths {
+                if let notify::Event {
+                    kind: notify::EventKind::Modify(_),
+                    paths,
+                    ..
+                } = event
+                {
+                    for path in paths {
                         if let Ok(file) = File::open(&path) {
                             if path
                                 .file_name()

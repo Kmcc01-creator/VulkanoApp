@@ -6,6 +6,7 @@ pub struct RenderPass {
     render_pass: vk::RenderPass,
     framebuffers: Vec<vk::Framebuffer>,
     device: Arc<Device>,
+    extent: vk::Extent2D,
 }
 
 impl RenderPass {
@@ -15,6 +16,8 @@ impl RenderPass {
         image_views: &[vk::ImageView],
         extent: vk::Extent2D,
     ) -> Result<Self> {
+        log::debug!("Creating render pass with format: {:?}", format);
+
         // Color attachment description
         let color_attachment = vk::AttachmentDescription::builder()
             .format(format)
@@ -32,39 +35,66 @@ impl RenderPass {
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
             .build();
 
+        // Subpass configuration
         let subpass = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(std::slice::from_ref(&color_attachment_ref))
             .build();
 
-        // Subpass dependency to ensure proper image layout transitions
-        let dependency = vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .build();
+        // Update the subpass dependencies
+        let dependencies = [
+            vk::SubpassDependency::builder()
+                .src_subpass(vk::SUBPASS_EXTERNAL)
+                .dst_subpass(0)
+                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(
+                    vk::AccessFlags::COLOR_ATTACHMENT_READ
+                        | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                )
+                .dependency_flags(vk::DependencyFlags::BY_REGION)
+                .build(),
+            vk::SubpassDependency::builder()
+                .src_subpass(0)
+                .dst_subpass(vk::SUBPASS_EXTERNAL)
+                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+                .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ)
+                .dependency_flags(vk::DependencyFlags::BY_REGION)
+                .build(),
+        ];
 
+        log::debug!(
+            "Creating render pass with {} dependencies",
+            dependencies.len()
+        );
         let render_pass_info = vk::RenderPassCreateInfo::builder()
             .attachments(std::slice::from_ref(&color_attachment))
             .subpasses(std::slice::from_ref(&subpass))
-            .dependencies(std::slice::from_ref(&dependency));
+            .dependencies(&dependencies);
 
         let render_pass = unsafe {
             device
                 .create_render_pass(&render_pass_info, None)
                 .map_err(|e| VulkanError::RenderPassCreation(e.to_string()))?
         };
+        log::debug!("Render pass created successfully");
 
         // Create framebuffers
+        log::debug!(
+            "Creating framebuffers for {} image views",
+            image_views.len()
+        );
         let framebuffers = Self::create_framebuffers(&device, render_pass, image_views, extent)?;
+        log::debug!("Created {} framebuffers", framebuffers.len());
 
         Ok(Self {
             render_pass,
             framebuffers,
             device,
+            extent,
         })
     }
 
@@ -74,9 +104,16 @@ impl RenderPass {
         image_views: &[vk::ImageView],
         extent: vk::Extent2D,
     ) -> Result<Vec<vk::Framebuffer>> {
+        log::debug!(
+            "Creating framebuffers with extent: {}x{}",
+            extent.width,
+            extent.height
+        );
+
         image_views
             .iter()
-            .map(|&image_view| {
+            .enumerate()
+            .map(|(i, &image_view)| {
                 let attachments = [image_view];
                 let framebuffer_info = vk::FramebufferCreateInfo::builder()
                     .render_pass(render_pass)
@@ -86,9 +123,16 @@ impl RenderPass {
                     .layers(1);
 
                 unsafe {
-                    device
+                    let framebuffer = device
                         .create_framebuffer(&framebuffer_info, None)
-                        .map_err(|e| VulkanError::FramebufferCreation(e.to_string()))
+                        .map_err(|e| VulkanError::FramebufferCreation(e.to_string()))?;
+                    log::debug!(
+                        "Created framebuffer {} with dimensions: {}x{}",
+                        i,
+                        extent.width,
+                        extent.height
+                    );
+                    Ok(framebuffer)
                 }
             })
             .collect()
@@ -101,27 +145,44 @@ impl RenderPass {
         extent: vk::Extent2D,
         clear_color: [f32; 4],
     ) {
+        log::debug!(
+            "Beginning render pass with framebuffer {} and extent: {}x{}",
+            framebuffer_index,
+            extent.width,
+            extent.height
+        );
+
+        // Verify that framebuffer index is valid
+        if framebuffer_index >= self.framebuffers.len() {
+            log::error!("Invalid framebuffer index: {}", framebuffer_index);
+            return;
+        }
+
+        let render_area = vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent,
+        };
+
         let clear_values = [vk::ClearValue {
             color: vk::ClearColorValue {
                 float32: clear_color,
             },
         }];
 
-        let render_pass_begin = vk::RenderPassBeginInfo::builder()
+        let render_pass_begin_info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.render_pass)
             .framebuffer(self.framebuffers[framebuffer_index])
-            .render_area(vk::Rect2D {
-                offset: vk::Offset2D { x: 0, y: 0 },
-                extent,
-            })
+            .render_area(render_area)
             .clear_values(&clear_values);
 
         unsafe {
+            log::debug!("Starting render pass command");
             self.device.cmd_begin_render_pass(
                 command_buffer,
-                &render_pass_begin,
+                &render_pass_begin_info,
                 vk::SubpassContents::INLINE,
             );
+            log::debug!("Render pass begin completed successfully");
         }
     }
 
@@ -132,15 +193,23 @@ impl RenderPass {
     pub fn framebuffers(&self) -> &[vk::Framebuffer] {
         &self.framebuffers
     }
+
+    pub fn extent(&self) -> vk::Extent2D {
+        self.extent
+    }
 }
 
 impl Drop for RenderPass {
     fn drop(&mut self) {
         unsafe {
-            for &framebuffer in &self.framebuffers {
+            log::debug!("Cleaning up render pass resources");
+            for (i, &framebuffer) in self.framebuffers.iter().enumerate() {
+                log::debug!("Destroying framebuffer {}", i);
                 self.device.destroy_framebuffer(framebuffer, None);
             }
+            log::debug!("Destroying render pass");
             self.device.destroy_render_pass(self.render_pass, None);
+            log::debug!("Render pass cleanup complete");
         }
     }
 }

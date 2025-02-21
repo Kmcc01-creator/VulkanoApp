@@ -16,6 +16,12 @@ pub enum VulkanError {
     #[error("Failed to create swapchain: {0}")]
     SwapchainCreation(String),
 
+    #[error("Swapchain is out of date and needs recreation")]
+    SwapchainOutOfDate,
+
+    #[error("Swapchain is suboptimal for current conditions")]
+    SwapchainSuboptimal,
+
     #[error("Failed to create image: {0}")]
     ImageCreation(String),
 
@@ -103,6 +109,12 @@ pub type Result<T> = std::result::Result<T, VulkanError>;
 impl From<LoadingError> for VulkanError {
     fn from(e: LoadingError) -> Self {
         VulkanError::General(e.to_string())
+    }
+}
+
+impl From<winit::error::OsError> for VulkanError {
+    fn from(e: winit::error::OsError) -> Self {
+        VulkanError::WindowError(e.to_string())
     }
 }
 

@@ -8,6 +8,20 @@ use winit::{
     window::WindowBuilder,
 };
 
+use ashengine::{
+    config::{Config, ConfigLoader, ConfigManager},
+    context::Context,
+    error::{Result as VkResult, VulkanError},
+    helpers::{
+        allocate_descriptor_sets, create_descriptor_pool, create_descriptor_set_layout,
+        create_index_buffer, create_pipeline_layout, create_storage_buffer, create_vertex_buffer,
+    },
+    text::{FontAtlas, TextElement, TextLayout, TextPicker},
+    RenderPass, Renderer, Swapchain,
+};
+
+use std::error::Error;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TextBlocksConfig {
     text_settings: TextSettings,
@@ -68,9 +82,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_inner_size(winit::dpi::LogicalSize::new(800, 600))
         .build(&event_loop)?;
 
-    // Initialize vulkan context with window
+    // Initialize Vulkan context and renderer
     let context = Context::new(Some(&window))?;
     let device = context.device();
+
+    // Create renderer
+    let mut renderer = Renderer::new(
+        device.clone(),
+        context.graphics_queue(),
+        context.queue_family_index(),
+        context.physical_device(),
+        context.instance(),
+        context.surface_loader(),
+        context.surface(),
+    )?;
 
     // Initialize configuration
     let config_manager = Arc::new(ConfigManager::new());
@@ -79,9 +104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load text blocks configuration
     config_loader.load_config("examples/text_blocks.ron")?;
     let config = config_manager
-        .get::<TextBlocksConfig>("text_blocks")?
+        .get::<TextBlocksConfig>("text_blocks")
+        .ok_or_else(|| Box::new(VulkanError::General("Failed to get config".into())))?
         .read()
-        .unwrap();
+        .map_err(|e| Box::new(VulkanError::General(e.to_string())))?;
 
     // Initialize text rendering components
     let font_atlas = FontAtlas::new(device.clone(), 512, 512)?;
@@ -102,21 +128,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
+    // Layout text elements
+    text_layout.layout_text(&text_elements, &font_atlas);
+
+    // Create swapchain
+    let swapchain = Swapchain::new(
+        context.physical_device(),
+        device.clone(),
+        context.instance(),
+        context.surface_loader(),
+        context.surface(),
+        [800, 600],
+    )?;
+
+    // Create render pass
+    let render_pass = RenderPass::new(
+        device.clone(),
+        swapchain.surface_format().format,
+        swapchain.image_views(),
+        swapchain.extent(),
+    )?;
+
     // Create descriptor sets and pipeline
-    let descriptor_pool = create_descriptor_pool(&device)?;
-    let descriptor_set_layout = create_descriptor_set_layout(&device)?;
+    let pool_sizes = [vk::DescriptorPoolSize {
+        ty: vk::DescriptorType::STORAGE_BUFFER,
+        descriptor_count: 2,
+    }];
+    let descriptor_pool = create_descriptor_pool(&device, 1, &pool_sizes)?;
+
+    let bindings = [
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::COMPUTE)
+            .build(),
+        vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::COMPUTE)
+            .build(),
+    ];
+    let descriptor_set_layout = create_descriptor_set_layout(&device, &bindings)?;
     let pipeline_layout = create_pipeline_layout(&device, &[descriptor_set_layout])?;
     let descriptor_sets =
         allocate_descriptor_sets(&device, descriptor_pool, &[descriptor_set_layout])?;
 
-    // Create renderer
-    let mut renderer = Renderer::new(context.clone())?;
-
     // Create buffers for text data
-    let vertex_buffer = create_vertex_buffer(&device, &text_layout.vertices())?;
-    let index_buffer = create_index_buffer(&device, &text_layout.indices())?;
-    let bbox_buffer = create_storage_buffer(&device, &text_layout.bounding_boxes())?;
-    let result_buffer = create_storage_buffer(&device, &[0u32, 0f32])?; // For picking results
+    let vertex_data = text_layout.vertices();
+    let index_data = text_layout.indices();
+    let bbox_data = text_layout.bounding_boxes();
+
+    let (vertex_buffer, vertex_memory) = create_vertex_buffer(&device, &vertex_data)?;
+    let (index_buffer, index_memory) = create_index_buffer(&device, &index_data)?;
+    let (bbox_buffer, bbox_memory) = create_storage_buffer(&device, &bbox_data)?;
+    let (result_buffer, result_memory) = create_storage_buffer(&device, &[0u32, 0])?;
+    // Initialize renderer with swapchain and shaders
+    renderer.initialize_swapchain(swapchain, render_pass, &[], &[])?; // TODO: Add shader loading
+    let viewport = vk::Viewport {
+        x: 0.0,
+        y: 0.0,
+        width: 800.0,
+        height: 600.0,
+        min_depth: 0.0,
+        max_depth: 1.0,
+    };
+
+    let scissor = vk::Rect2D {
+        offset: vk::Offset2D { x: 0, y: 0 },
+        extent: vk::Extent2D {
+            width: 800,
+            height: 600,
+        },
+    };
 
     // Layout text elements
     text_layout.layout_text(&text_elements, &font_atlas);
@@ -153,32 +238,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             Event::RedrawRequested(_) => {
-                renderer.begin_frame().unwrap();
+                if let Err(e) = renderer.begin_frame() {
+                    eprintln!("Failed to begin frame: {}", e);
+                    return;
+                }
 
                 let command_buffer = renderer.current_command_buffer();
-                let extent = renderer.swapchain_extent();
 
-                // Set viewport and scissor
-                renderer.cmd_set_viewport(command_buffer, extent);
-                renderer.cmd_set_scissor(command_buffer, extent);
-
-                // Bind pipeline and vertex buffers
                 unsafe {
-                    device.cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer], &[0]);
+                    // Set viewport and scissor
+                    device.cmd_set_viewport(command_buffer, &[viewport]);
+                    device.cmd_set_scissor(command_buffer, &[scissor]);
+
+                    // Bind vertex and index buffers
+                    device.cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer.0], &[0]);
                     device.cmd_bind_index_buffer(
                         command_buffer,
-                        index_buffer,
+                        index_buffer.0,
                         0,
                         vk::IndexType::UINT32,
                     );
-                }
 
-                // Draw text
-                unsafe {
+                    // Draw text
                     device.cmd_draw_indexed(command_buffer, text_layout.index_count(), 1, 0, 0, 0);
                 }
 
-                renderer.end_frame().unwrap();
+                if let Err(e) = renderer.end_frame() {
+                    eprintln!("Failed to end frame: {}", e);
+                }
             }
 
             Event::MainEventsCleared => {

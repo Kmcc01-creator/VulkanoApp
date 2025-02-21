@@ -1,10 +1,13 @@
+use ash::vk;
+use ashengine::helpers::{create_index_buffer, create_storage_buffer, create_vertex_buffer};
+use ashengine::renderer::Renderer;
 use ashengine::{
     config::{ConfigLoader, ConfigManager},
+    context::Context,
     text::{
         pixel_to_ndc, FontAtlas, TextAlignment, TextConfig, TextElement, TextLayout, TextPicker,
-        TextResult,
     },
-    Context, Result,
+    Result,
 };
 use std::sync::Arc;
 use winit::{
@@ -22,7 +25,7 @@ fn main() -> Result<()> {
         .build(&event_loop)?;
 
     // Initialize Vulkan context
-    let context = Context::new(Some(&window))?;
+    let context = Arc::new(Context::new(Some(&window))?);
     let device = context.device();
 
     // Initialize configuration system
@@ -33,7 +36,7 @@ fn main() -> Result<()> {
     config_loader.load_config("examples/text_blocks.ron")?;
 
     // Initialize text rendering components
-    let font_atlas = FontAtlas::new(device.clone(), 512, 512)?;
+    let font_atlas = FontAtlas::new(context.clone(), 512, 512)?;
     let mut text_layout = TextLayout::new();
     let text_picker = TextPicker::new(device.clone())?;
 
@@ -68,12 +71,20 @@ fn main() -> Result<()> {
     text_layout.layout_text(&text_elements, &font_atlas);
 
     // Create necessary buffers
-    let vertex_buffer = create_vertex_buffer(device.as_ref(), text_layout.vertices())?;
-    let index_buffer = create_index_buffer(device.as_ref(), text_layout.indices())?;
-    let bbox_buffer = create_storage_buffer(device.as_ref(), text_layout.bounding_boxes())?;
+    let (vertex_buffer, vertex_memory) = create_vertex_buffer(&device, text_layout.vertices())?;
+    let (index_buffer, index_memory) = create_index_buffer(&device, text_layout.indices())?;
+    let (bbox_buffer, bbox_memory) = create_storage_buffer(&device, text_layout.bounding_boxes())?;
 
-    // Create renderer (assuming you have a renderer implementation)
-    let mut renderer = Renderer::new(context)?;
+    // Create renderer
+    let mut renderer = Renderer::new(
+        device.clone(),
+        context.graphics_queue(),
+        context.queue_family_index(),
+        context.physical_device(),
+        context.instance().clone(),
+        context.surface_loader().clone(),
+        context.surface(),
+    )?;
 
     // Main event loop
     event_loop.run(move |event, _, control_flow| {
@@ -121,16 +132,17 @@ fn test_intersection(
     bbox_buffer: vk::Buffer,
     cursor_pos: [f32; 2],
 ) {
-    let result_buffer = create_storage_buffer(renderer.device(), &[0u32, 0.0f32]).unwrap();
+    let (result_buffer, result_memory) =
+        create_storage_buffer(renderer.device(), &[0u32, 0u32]).unwrap();
 
     text_picker.test_intersection(
         renderer.current_command_buffer(),
         bbox_buffer,
         result_buffer,
-        renderer.descriptor_sets()[0],
+        text_picker.descriptor_set(),
         cursor_pos,
         [0.0, 1.0],
-        2, // Number of text elements
+        2,
     );
 }
 

@@ -4,7 +4,7 @@ use crate::text::vertex::TextVertex;
 use ash::vk;
 use std::sync::Arc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BoundingBox {
     pub rect: Rect,
     pub element_id: u32,

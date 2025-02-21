@@ -10,15 +10,18 @@ pub struct Swapchain {
     image_views: Vec<vk::ImageView>,
     surface_format: vk::SurfaceFormatKHR,
     extent: vk::Extent2D,
+    present_mode: vk::PresentModeKHR,
     device: Arc<Device>,
+    instance: Arc<Instance>,
+    surface_loader: Arc<khr::Surface>,
 }
 
 impl Swapchain {
     pub fn new(
         physical_device: vk::PhysicalDevice,
         device: Arc<Device>,
-        instance: &Instance,
-        surface_loader: &khr::Surface,
+        instance: Arc<Instance>,
+        surface_loader: Arc<khr::Surface>,
         surface: vk::SurfaceKHR,
         dimensions: [u32; 2],
     ) -> Result<Self> {
@@ -28,6 +31,13 @@ impl Swapchain {
                 .get_physical_device_surface_capabilities(physical_device, surface)
                 .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))?
         };
+
+        // Check for zero size
+        if capabilities.current_extent.width == 0 || capabilities.current_extent.height == 0 {
+            return Err(VulkanError::SwapchainCreation(
+                "Window surface has zero size".to_string(),
+            ));
+        }
 
         // Choose surface format
         let surface_format = unsafe {
@@ -81,7 +91,7 @@ impl Swapchain {
         };
 
         // Create swapchain
-        let swapchain_loader = khr::Swapchain::new(instance, &device);
+        let swapchain_loader = khr::Swapchain::new(&instance, &device);
         let create_info = vk::SwapchainCreateInfoKHR::builder()
             .surface(surface)
             .min_image_count(image_count)
@@ -145,7 +155,10 @@ impl Swapchain {
             image_views,
             surface_format,
             extent,
+            present_mode,
             device,
+            instance,
+            surface_loader,
         })
     }
 
@@ -154,10 +167,19 @@ impl Swapchain {
         semaphore: vk::Semaphore,
         fence: vk::Fence,
     ) -> Result<(u32, bool)> {
-        unsafe {
+        match unsafe {
             self.swapchain_loader
                 .acquire_next_image(self.swapchain, u64::MAX, semaphore, fence)
-                .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))
+        } {
+            Ok((index, suboptimal)) => {
+                if suboptimal {
+                    Err(VulkanError::SwapchainSuboptimal)
+                } else {
+                    Ok((index, false))
+                }
+            }
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Err(VulkanError::SwapchainOutOfDate),
+            Err(e) => Err(VulkanError::SwapchainCreation(e.to_string())),
         }
     }
 
@@ -174,10 +196,16 @@ impl Swapchain {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        unsafe {
-            self.swapchain_loader
-                .queue_present(queue, &present_info)
-                .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))
+        match unsafe { self.swapchain_loader.queue_present(queue, &present_info) } {
+            Ok(suboptimal) => {
+                if suboptimal {
+                    Err(VulkanError::SwapchainSuboptimal)
+                } else {
+                    Ok(false)
+                }
+            }
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Err(VulkanError::SwapchainOutOfDate),
+            Err(e) => Err(VulkanError::SwapchainCreation(e.to_string())),
         }
     }
 
@@ -197,8 +225,8 @@ impl Swapchain {
         &mut self,
         physical_device: vk::PhysicalDevice,
         device: Arc<Device>,
-        instance: &Instance,
-        surface_loader: &khr::Surface,
+        instance: Arc<Instance>,
+        surface_loader: Arc<khr::Surface>,
         surface: vk::SurfaceKHR,
         dimensions: [u32; 2],
     ) -> Result<()> {
@@ -223,6 +251,13 @@ impl Swapchain {
                 .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))?
         };
 
+        // Check for zero size
+        if capabilities.current_extent.width == 0 || capabilities.current_extent.height == 0 {
+            return Err(VulkanError::SwapchainCreation(
+                "Window surface has zero size".to_string(),
+            ));
+        }
+
         // Calculate new extent
         let new_extent = if capabilities.current_extent.width != u32::MAX {
             capabilities.current_extent
@@ -240,6 +275,7 @@ impl Swapchain {
         };
 
         // Create new swapchain
+        let swapchain_loader = khr::Swapchain::new(&self.instance, &self.device);
         let create_info = vk::SwapchainCreateInfoKHR::builder()
             .surface(surface)
             .min_image_count(capabilities.min_image_count + 1)
@@ -250,7 +286,7 @@ impl Swapchain {
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .pre_transform(capabilities.current_transform)
             .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(vk::PresentModeKHR::FIFO)
+            .present_mode(self.present_mode)
             .clipped(true)
             .old_swapchain(self.swapchain);
 
@@ -268,6 +304,10 @@ impl Swapchain {
 
         self.swapchain = new_swapchain;
         self.extent = new_extent;
+        self.device = device;
+        self.instance = instance;
+        self.surface_loader = surface_loader;
+        self.swapchain_loader = swapchain_loader;
 
         // Get new swapchain images and create new image views
         let images = unsafe {
@@ -297,7 +337,7 @@ impl Swapchain {
                         layer_count: 1,
                     });
                 unsafe {
-                    device
+                    self.device
                         .create_image_view(&create_info, None)
                         .map_err(|e| VulkanError::SwapchainCreation(e.to_string()))
                 }

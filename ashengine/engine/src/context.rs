@@ -9,11 +9,11 @@ use crate::error::{Result, VulkanError};
 
 pub struct Context {
     _entry: Entry,
-    instance: Instance,
+    instance: Arc<Instance>,
     device: Arc<Device>,
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
-    surface_loader: ash::extensions::khr::Surface,
+    surface_loader: Arc<ash::extensions::khr::Surface>,
     queue_family_index: u32,
     graphics_queue: vk::Queue,
 }
@@ -55,14 +55,16 @@ impl Context {
             .enabled_extension_names(&instance_extensions);
 
         let instance = unsafe {
-            entry
-                .create_instance(&create_info, None)
-                .map_err(|e| VulkanError::InstanceCreation(e.to_string()))?
+            Arc::new(
+                entry
+                    .create_instance(&create_info, None)
+                    .map_err(|e| VulkanError::InstanceCreation(e.to_string()))?,
+            )
         };
 
         // Create surface if window is provided
         let (surface, surface_loader) = if let Some(window) = window {
-            let surface_loader = ash::extensions::khr::Surface::new(&entry, &instance);
+            let surface_loader = Arc::new(ash::extensions::khr::Surface::new(&entry, &instance));
             let display_handle = window.raw_display_handle();
             let window_handle = window.raw_window_handle();
 
@@ -74,7 +76,7 @@ impl Context {
         } else {
             (
                 vk::SurfaceKHR::null(),
-                ash::extensions::khr::Surface::new(&entry, &instance),
+                Arc::new(ash::extensions::khr::Surface::new(&entry, &instance)),
             )
         };
 
@@ -160,12 +162,12 @@ impl Context {
         self.graphics_queue
     }
 
-    pub fn instance(&self) -> &Instance {
-        &self.instance
+    pub fn instance(&self) -> Arc<Instance> {
+        self.instance.clone()
     }
 
-    pub fn surface_loader(&self) -> &ash::extensions::khr::Surface {
-        &self.surface_loader
+    pub fn surface_loader(&self) -> Arc<ash::extensions::khr::Surface> {
+        self.surface_loader.clone()
     }
 }
 

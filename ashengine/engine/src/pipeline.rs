@@ -6,6 +6,7 @@ pub struct Pipeline {
     pipeline: vk::Pipeline,
     layout: vk::PipelineLayout,
     device: Arc<Device>,
+    extent: vk::Extent2D,
 }
 
 impl Pipeline {
@@ -16,6 +17,11 @@ impl Pipeline {
         vert_code: &[u8],
         frag_code: &[u8],
     ) -> Result<Self> {
+        log::debug!(
+            "Creating graphics pipeline for extent: {}x{}",
+            extent.width,
+            extent.height
+        );
         let vert_shader_module = crate::utils::create_shader_module(&device, vert_code)?;
         let frag_shader_module = crate::utils::create_shader_module(&device, frag_code)?;
 
@@ -34,7 +40,14 @@ impl Pipeline {
                 .build(),
         ];
 
+        // Dynamic state
+        let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+        let dynamic_state =
+            vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
+
+        // Vertex input state - no vertex input as it's hardcoded in the shader
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+
         let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
@@ -53,7 +66,6 @@ impl Pipeline {
             .extent(extent)
             .build();
 
-        // Store viewports and scissors in vectors to maintain their lifetime
         let viewports = [viewport];
         let scissors = [scissor];
 
@@ -79,13 +91,13 @@ impl Pipeline {
             .blend_enable(false)
             .build();
 
-        // Store color blend attachments in a vector
         let color_blend_attachments = [color_blend_attachment];
 
         let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
             .logic_op_enable(false)
             .attachments(&color_blend_attachments);
 
+        log::debug!("Creating pipeline layout");
         let layout_info = vk::PipelineLayoutCreateInfo::builder();
         let layout = unsafe {
             device
@@ -93,6 +105,7 @@ impl Pipeline {
                 .map_err(|e| VulkanError::PipelineLayoutCreation(e.to_string()))?
         };
 
+        log::debug!("Creating graphics pipeline");
         let pipeline_info = vk::GraphicsPipelineCreateInfo::builder()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_info)
@@ -101,6 +114,7 @@ impl Pipeline {
             .rasterization_state(&rasterizer_info)
             .multisample_state(&multisampling_info)
             .color_blend_state(&color_blend_info)
+            .dynamic_state(&dynamic_state)
             .layout(layout)
             .render_pass(render_pass)
             .subpass(0);
@@ -115,26 +129,53 @@ impl Pipeline {
                 .map_err(|e| VulkanError::PipelineCreation(e.1.to_string()))?[0]
         };
 
+        log::debug!("Cleaning up shader modules");
         unsafe {
             device.destroy_shader_module(vert_shader_module, None);
             device.destroy_shader_module(frag_shader_module, None);
         }
 
+        log::debug!("Pipeline created successfully");
         Ok(Self {
             pipeline,
             layout,
             device,
+            extent,
         })
     }
 
     pub fn bind(&self, command_buffer: vk::CommandBuffer) {
+        log::debug!(
+            "Binding graphics pipeline with viewport size: {}x{}",
+            self.extent.width,
+            self.extent.height
+        );
+
         unsafe {
             self.device.cmd_bind_pipeline(
                 command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
             );
+
+            // Set dynamic viewport and scissor using stored extent
+            let viewport = vk::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: self.extent.width as f32,
+                height: self.extent.height as f32,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            };
+            self.device.cmd_set_viewport(command_buffer, 0, &[viewport]);
+
+            let scissor = vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.extent,
+            };
+            self.device.cmd_set_scissor(command_buffer, 0, &[scissor]);
         }
+        log::debug!("Pipeline binding complete");
     }
 
     pub fn layout(&self) -> vk::PipelineLayout {
@@ -143,6 +184,10 @@ impl Pipeline {
 
     pub fn pipeline(&self) -> vk::Pipeline {
         self.pipeline
+    }
+
+    pub fn extent(&self) -> vk::Extent2D {
+        self.extent
     }
 }
 

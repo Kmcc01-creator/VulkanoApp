@@ -2,6 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+pub mod loader;
+pub use loader::ConfigLoader;
+
 /// Main configuration manager that handles all engine configurations
 pub struct ConfigManager {
     configs: RwLock<HashMap<String, Box<dyn Config>>>,

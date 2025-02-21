@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use winit::{
     event::{Event, WindowEvent},
@@ -43,6 +44,10 @@ fn main() -> Result<()> {
         device.clone(),
         context.graphics_queue(),
         context.queue_family_index(),
+        context.physical_device(),
+        context.instance(),
+        context.surface_loader(),
+        context.surface(),
     )?;
 
     // Create swapchain
@@ -65,9 +70,16 @@ fn main() -> Result<()> {
 
     // Load shader code
     log::info!("Loading shader code...");
-    let vert_shader = std::fs::read("shaders/triangle.vert.spv")
+    let shader_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders");
+    let vert_path = shader_dir.join("triangle.vert.spv");
+    let frag_path = shader_dir.join("triangle.frag.spv");
+
+    log::info!("Loading vertex shader from: {:?}", vert_path);
+    let vert_shader = std::fs::read(&vert_path)
         .map_err(|e| VulkanError::ShaderCreation(format!("Failed to read vertex shader: {}", e)))?;
-    let frag_shader = std::fs::read("shaders/triangle.frag.spv").map_err(|e| {
+
+    log::info!("Loading fragment shader from: {:?}", frag_path);
+    let frag_shader = std::fs::read(&frag_path).map_err(|e| {
         VulkanError::ShaderCreation(format!("Failed to read fragment shader: {}", e))
     })?;
 
@@ -75,6 +87,7 @@ fn main() -> Result<()> {
     log::info!("Fragment shader size: {} bytes", frag_shader.len());
 
     // Initialize renderer with swapchain and render pass
+    log::info!("Initializing swapchain...");
     renderer.initialize_swapchain(swapchain, render_pass, &vert_shader, &frag_shader)?;
     log::info!("Renderer created successfully");
 
@@ -97,19 +110,23 @@ fn main() -> Result<()> {
                 log::info!("Window close requested");
                 *control_flow = ControlFlow::Exit;
             }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(new_size),
+                ..
+            } => {
+                log::info!("Window resized to: {}x{}", new_size.width, new_size.height);
+                if let Err(e) = renderer.handle_resize([new_size.width, new_size.height]) {
+                    log::error!("Failed to handle resize: {}", e);
+                }
+            }
             Event::MainEventsCleared => {
-                log::debug!("Main events cleared, requesting redraw");
                 window.request_redraw();
             }
             Event::RedrawRequested(_) => {
-                log::debug!("Redraw requested, attempting to render frame");
                 if let Err(e) = render_frame(&mut renderer) {
                     log::error!("Failed to render frame: {}", e);
                     *control_flow = ControlFlow::Exit;
                 }
-            }
-            Event::WindowEvent { event, .. } => {
-                log::debug!("Window event: {:?}", event);
             }
             _ => {}
         }
@@ -117,7 +134,12 @@ fn main() -> Result<()> {
 }
 
 fn render_frame(renderer: &mut Renderer) -> Result<()> {
+    // Begin frame
+    log::trace!("Beginning frame");
     renderer.begin_frame()?;
+
+    // Submit frame
+    log::trace!("Ending frame");
     renderer.end_frame()?;
     Ok(())
 }

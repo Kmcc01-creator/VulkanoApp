@@ -1,7 +1,11 @@
 use crate::error::{Result, VulkanError};
 use crate::{pipeline::Pipeline, render_pass::RenderPass, swapchain::Swapchain};
-use ash::{vk, Device};
+use ash::{vk, Device, Instance};
 use std::sync::Arc;
+
+fn extent_to_array(extent: vk::Extent2D) -> [u32; 2] {
+    [extent.width, extent.height]
+}
 
 pub struct Renderer {
     device: Arc<Device>,
@@ -17,6 +21,12 @@ pub struct Renderer {
     frames_in_flight: usize,
     graphics_queue: vk::Queue,
     current_image_index: Option<u32>,
+    vert_shader_code: Vec<u8>,
+    frag_shader_code: Vec<u8>,
+    physical_device: vk::PhysicalDevice,
+    instance: Arc<Instance>,
+    surface_loader: Arc<ash::extensions::khr::Surface>,
+    surface: vk::SurfaceKHR,
 }
 
 impl Renderer {
@@ -24,8 +34,16 @@ impl Renderer {
         device: Arc<Device>,
         graphics_queue: vk::Queue,
         queue_family_index: u32,
+        physical_device: vk::PhysicalDevice,
+        instance: Arc<Instance>,
+        surface_loader: Arc<ash::extensions::khr::Surface>,
+        surface: vk::SurfaceKHR,
     ) -> Result<Self> {
         let frames_in_flight = 2;
+        log::debug!(
+            "Creating renderer with {} frames in flight",
+            frames_in_flight
+        );
 
         // Create command pool
         let pool_info = vk::CommandPoolCreateInfo::builder()
@@ -37,6 +55,7 @@ impl Renderer {
                 .create_command_pool(&pool_info, None)
                 .map_err(|e| VulkanError::CommandPoolCreation(e.to_string()))?
         };
+        log::debug!("Command pool created successfully");
 
         // Create synchronization objects
         let mut image_available_semaphores = Vec::with_capacity(frames_in_flight);
@@ -45,7 +64,7 @@ impl Renderer {
         let semaphore_info = vk::SemaphoreCreateInfo::default();
         let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
 
-        for _ in 0..frames_in_flight {
+        for i in 0..frames_in_flight {
             unsafe {
                 let image_available_semaphore = device
                     .create_semaphore(&semaphore_info, None)
@@ -63,6 +82,7 @@ impl Renderer {
                 render_finished_semaphores.push(render_finished_semaphore);
                 in_flight_fences.push(in_flight_fence);
             }
+            log::debug!("Created synchronization objects for frame {}", i);
         }
 
         Ok(Self {
@@ -79,13 +99,70 @@ impl Renderer {
             frames_in_flight,
             graphics_queue,
             current_image_index: None,
+            vert_shader_code: Vec::new(),
+            frag_shader_code: Vec::new(),
+            physical_device,
+            instance,
+            surface_loader,
+            surface,
         })
     }
 
+    pub fn handle_resize(&mut self, dimensions: [u32; 2]) -> Result<()> {
+        log::debug!("Handling resize to dimensions: {:?}", dimensions);
+
+        unsafe {
+            self.device
+                .device_wait_idle()
+                .map_err(|e| VulkanError::SyncError(e.to_string()))?;
+        }
+
+        if let Some(swapchain) = &mut self.swapchain {
+            if dimensions[0] == 0 || dimensions[1] == 0 {
+                log::debug!("Skipping resize due to zero dimensions");
+                return Ok(());
+            }
+
+            log::debug!("Recreating swapchain");
+            swapchain.recreate(
+                self.physical_device,
+                self.device.clone(),
+                self.instance.clone(),
+                self.surface_loader.clone(),
+                self.surface,
+                dimensions,
+            )?;
+
+            // Recreate the render pass with the new swapchain's format and image views
+            log::debug!("Recreating render pass");
+            self.render_pass = Some(RenderPass::new(
+                self.device.clone(),
+                swapchain.surface_format().format,
+                swapchain.image_views(),
+                swapchain.extent(),
+            )?);
+
+            if let Some(render_pass) = &self.render_pass {
+                log::debug!("Recreating pipeline");
+                self.pipeline = Some(Pipeline::new(
+                    self.device.clone(),
+                    render_pass.handle(),
+                    swapchain.extent(),
+                    &self.vert_shader_code,
+                    &self.frag_shader_code,
+                )?);
+            }
+        }
+        log::debug!("Resize handled successfully");
+        Ok(())
+    }
+
     pub fn begin_frame(&mut self) -> Result<()> {
+        log::debug!("Beginning frame {}", self.current_frame);
         let fence = self.in_flight_fences[self.current_frame];
 
         unsafe {
+            log::debug!("Waiting for fence");
             self.device
                 .wait_for_fences(&[fence], true, u64::MAX)
                 .map_err(|e| VulkanError::SyncError(e.to_string()))?;
@@ -93,9 +170,11 @@ impl Renderer {
             self.device
                 .reset_fences(&[fence])
                 .map_err(|e| VulkanError::SyncError(e.to_string()))?;
+        }
 
-            // Reset command buffer
-            if !self.command_buffers.is_empty() {
+        if !self.command_buffers.is_empty() {
+            log::debug!("Resetting command buffer");
+            unsafe {
                 self.device
                     .reset_command_buffer(
                         self.command_buffers[self.current_frame],
@@ -106,64 +185,92 @@ impl Renderer {
         }
 
         if let Some(swapchain) = &self.swapchain {
-            let (image_index, _) = swapchain.acquire_next_image(
+            log::debug!("Acquiring next image");
+            match swapchain.acquire_next_image(
                 self.image_available_semaphores[self.current_frame],
                 vk::Fence::null(),
-            )?;
-            self.current_image_index = Some(image_index);
+            ) {
+                Ok((image_index, _)) => {
+                    self.current_image_index = Some(image_index);
+                    log::debug!("Acquired image index: {}", image_index);
 
-            if !self.command_buffers.is_empty() {
-                // Begin command buffer
-                let command_buffer = self.command_buffers[self.current_frame];
-                let begin_info = vk::CommandBufferBeginInfo::builder()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+                    if !self.command_buffers.is_empty() {
+                        let command_buffer = self.command_buffers[self.current_frame];
+                        let begin_info = vk::CommandBufferBeginInfo::builder()
+                            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-                unsafe {
-                    self.device
-                        .begin_command_buffer(command_buffer, &begin_info)
-                        .map_err(|e| VulkanError::General(e.to_string()))?;
-                }
-
-                // Begin render pass
-                if let Some(render_pass) = &self.render_pass {
-                    render_pass.begin_render_pass(
-                        command_buffer,
-                        image_index as usize,
-                        swapchain.extent(),
-                        [0.0, 0.0, 0.0, 1.0],
-                    );
-
-                    // Bind pipeline and draw triangle
-                    if let Some(pipeline) = &self.pipeline {
-                        pipeline.bind(command_buffer);
                         unsafe {
-                            self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                            log::debug!("Beginning command buffer recording");
+                            self.device
+                                .begin_command_buffer(command_buffer, &begin_info)
+                                .map_err(|e| VulkanError::General(e.to_string()))?;
+                        }
+
+                        if let Some(render_pass) = &self.render_pass {
+                            log::debug!("Beginning render pass");
+                            render_pass.begin_render_pass(
+                                command_buffer,
+                                image_index as usize,
+                                swapchain.extent(),
+                                [0.0, 0.0, 0.0, 1.0],
+                            );
+                            log::debug!("Render pass started successfully");
+
+                            if let Some(pipeline) = &self.pipeline {
+                                log::debug!("Binding pipeline for drawing");
+                                pipeline.bind(command_buffer);
+                                log::debug!("Drawing triangle");
+                                unsafe {
+                                    self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+                                }
+                                log::debug!("Draw commands recorded successfully");
+                            } else {
+                                log::warn!("No pipeline available for drawing");
+                            }
+                        } else {
+                            log::warn!("No render pass available");
                         }
                     }
                 }
+                Err(VulkanError::SwapchainOutOfDate) => {
+                    log::info!("Swapchain out of date, recreating");
+                    if let Some(swapchain) = &self.swapchain {
+                        self.handle_resize(extent_to_array(swapchain.extent()))?;
+                    }
+                    return Ok(());
+                }
+                Err(VulkanError::SwapchainSuboptimal) => {
+                    log::info!("Swapchain suboptimal, continuing with frame");
+                }
+                Err(e) => return Err(e),
             }
+        } else {
+            log::warn!("No swapchain available");
         }
 
         Ok(())
     }
 
     pub fn end_frame(&mut self) -> Result<()> {
+        log::debug!("Ending frame {}", self.current_frame);
+
         if let (Some(swapchain), Some(image_index)) = (&self.swapchain, self.current_image_index) {
             if !self.command_buffers.is_empty() {
                 let command_buffer = self.command_buffers[self.current_frame];
 
-                // End render pass
                 unsafe {
                     if self.render_pass.is_some() {
+                        log::debug!("Ending render pass");
                         self.device.cmd_end_render_pass(command_buffer);
+                        log::debug!("Render pass ended successfully");
                     }
 
-                    // End command buffer
+                    log::debug!("Ending command buffer recording");
                     self.device
                         .end_command_buffer(command_buffer)
                         .map_err(|e| VulkanError::General(e.to_string()))?;
 
-                    // Submit command buffer
+                    log::debug!("Submitting command buffer");
                     let wait_semaphores = [self.image_available_semaphores[self.current_frame]];
                     let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
                     let signal_semaphores = [self.render_finished_semaphores[self.current_frame]];
@@ -175,6 +282,7 @@ impl Renderer {
                         .command_buffers(&command_buffers)
                         .signal_semaphores(&signal_semaphores);
 
+                    log::debug!("Submitting to graphics queue");
                     self.device
                         .queue_submit(
                             self.graphics_queue,
@@ -182,27 +290,33 @@ impl Renderer {
                             self.in_flight_fences[self.current_frame],
                         )
                         .map_err(|e| VulkanError::General(e.to_string()))?;
+                    log::debug!("Command buffer submitted successfully");
                 }
             }
 
-            swapchain.present(
+            log::debug!("Presenting frame");
+            match swapchain.present(
                 self.graphics_queue,
                 image_index,
                 &[self.render_finished_semaphores[self.current_frame]],
-            )?;
+            ) {
+                Ok(_) => {
+                    log::debug!("Frame presented successfully");
+                }
+                Err(VulkanError::SwapchainOutOfDate) => {
+                    log::info!("Swapchain out of date during present, recreating");
+                    self.handle_resize(extent_to_array(swapchain.extent()))?;
+                }
+                Err(VulkanError::SwapchainSuboptimal) => {
+                    log::info!("Swapchain suboptimal during present, continuing");
+                }
+                Err(e) => return Err(e),
+            }
         }
 
         self.current_frame = (self.current_frame + 1) % self.frames_in_flight;
         self.current_image_index = None;
         Ok(())
-    }
-
-    pub fn device(&self) -> &Device {
-        &self.device
-    }
-
-    pub fn current_command_buffer(&self) -> vk::CommandBuffer {
-        self.command_buffers[self.current_frame]
     }
 
     pub fn initialize_swapchain(
@@ -212,7 +326,11 @@ impl Renderer {
         vert_shader: &[u8],
         frag_shader: &[u8],
     ) -> Result<()> {
-        // Create command buffers
+        log::debug!("Initializing swapchain");
+
+        self.vert_shader_code = vert_shader.to_vec();
+        self.frag_shader_code = frag_shader.to_vec();
+
         let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(self.command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)
@@ -223,8 +341,9 @@ impl Renderer {
                 .allocate_command_buffers(&command_buffer_allocate_info)
                 .map_err(|e| VulkanError::CommandBufferAllocation(e.to_string()))?
         };
+        log::debug!("Created {} command buffers", command_buffers.len());
 
-        // Create pipeline
+        log::debug!("Creating graphics pipeline");
         let pipeline = Pipeline::new(
             self.device.clone(),
             render_pass.handle(),
@@ -237,6 +356,7 @@ impl Renderer {
         self.command_buffers = command_buffers;
         self.swapchain = Some(swapchain);
         self.render_pass = Some(render_pass);
+        log::debug!("Swapchain initialization complete");
         Ok(())
     }
 
@@ -255,11 +375,24 @@ impl Renderer {
     pub fn set_command_buffers(&mut self, command_buffers: Vec<vk::CommandBuffer>) {
         self.command_buffers = command_buffers;
     }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
+
+    pub fn current_command_buffer(&self) -> vk::CommandBuffer {
+        self.command_buffers[self.current_frame]
+    }
+
+    pub fn descriptor_sets(&self) -> &Vec<vk::DescriptorSet> {
+        panic!("Descriptor sets are not managed by the Renderer")
+    }
 }
 
 impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
+            log::debug!("Cleaning up renderer resources");
             self.device.destroy_command_pool(self.command_pool, None);
             for semaphore in &self.image_available_semaphores {
                 self.device.destroy_semaphore(*semaphore, None);
@@ -270,6 +403,7 @@ impl Drop for Renderer {
             for fence in &self.in_flight_fences {
                 self.device.destroy_fence(*fence, None);
             }
+            log::debug!("Renderer cleanup complete");
         }
     }
 }

@@ -27,6 +27,9 @@ pub struct FontAtlas {
     extent: vk::Extent2D,
     glyph_data: HashMap<char, GlyphInfo>,
     context: Arc<Context>,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_set: vk::DescriptorSet,
 }
 
 impl FontAtlas {
@@ -93,6 +96,49 @@ impl FontAtlas {
                 .map_err(|e| VulkanError::MemoryBinding(e.to_string()))?;
         }
 
+        // Create descriptor set layout
+        let binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build();
+
+        let layout_info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(&[binding]);
+
+        let descriptor_set_layout = unsafe {
+            device
+                .create_descriptor_set_layout(&layout_info, None)
+                .map_err(|e| VulkanError::DescriptorSetLayoutCreation(e.to_string()))?
+        };
+
+        // Create descriptor pool
+        let pool_size = vk::DescriptorPoolSize {
+            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            descriptor_count: 1,
+        };
+
+        let pool_info = vk::DescriptorPoolCreateInfo::builder()
+            .pool_sizes(&[pool_size])
+            .max_sets(1);
+
+        let descriptor_pool = unsafe {
+            device
+                .create_descriptor_pool(&pool_info, None)
+                .map_err(|e| VulkanError::DescriptorPoolCreation(e.to_string()))?
+        };
+
+        // Allocate descriptor set
+        let alloc_info = vk::DescriptorSetAllocateInfo::builder()
+            .descriptor_pool(descriptor_pool)
+            .set_layouts(&[descriptor_set_layout]);
+
+        let descriptor_set = unsafe {
+            device
+                .allocate_descriptor_sets(&alloc_info)
+                .map_err(|e| VulkanError::DescriptorSetAllocation(e.to_string()))?[0]
+        };
+
         // Create image view
         let view_info = vk::ImageViewCreateInfo::builder()
             .image(texture)
@@ -142,6 +188,103 @@ impl FontAtlas {
                 .map_err(|e| VulkanError::SamplerCreation(e.to_string()))?
         };
 
+        // Transition image layout
+        let command_pool = unsafe {
+            device
+                .create_command_pool(
+                    &vk::CommandPoolCreateInfo::builder()
+                        .flags(vk::CommandPoolCreateFlags::TRANSIENT)
+                        .queue_family_index(context.queue_family_index()),
+                    None,
+                )
+                .map_err(|e| VulkanError::CommandPoolCreation(e.to_string()))?
+        };
+
+        let command_buffer = unsafe {
+            let alloc_info = vk::CommandBufferAllocateInfo::builder()
+                .command_pool(command_pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1);
+
+            device
+                .allocate_command_buffers(&alloc_info)
+                .map_err(|e| VulkanError::CommandBufferAllocation(e.to_string()))?[0]
+        };
+
+        unsafe {
+            device
+                .begin_command_buffer(
+                    command_buffer,
+                    &vk::CommandBufferBeginInfo::builder()
+                        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+                )
+                .map_err(|e| VulkanError::CommandBufferBegin(e.to_string()))?;
+
+            let barrier = vk::ImageMemoryBarrier::builder()
+                .old_layout(vk::ImageLayout::UNDEFINED)
+                .new_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(texture)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1,
+                })
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::SHADER_READ)
+                .build();
+
+            device.cmd_pipeline_barrier(
+                command_buffer,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+
+            device
+                .end_command_buffer(command_buffer)
+                .map_err(|e| VulkanError::CommandBufferEnd(e.to_string()))?;
+
+            let submit_info = vk::SubmitInfo::builder()
+                .command_buffers(&[command_buffer])
+                .build();
+
+            device
+                .queue_submit(context.graphics_queue(), &[submit_info], vk::Fence::null())
+                .map_err(|e| VulkanError::QueueSubmit(e.to_string()))?;
+
+            device
+                .queue_wait_idle(context.graphics_queue())
+                .map_err(|e| VulkanError::QueueWaitIdle(e.to_string()))?;
+
+            device.destroy_command_pool(command_pool, None);
+        }
+
+        // Update descriptor set
+        let image_info = vk::DescriptorImageInfo::builder()
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+            .image_view(view)
+            .sampler(sampler)
+            .build();
+
+        let write_descriptor_set = vk::WriteDescriptorSet::builder()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .image_info(&[image_info])
+            .build();
+
+        unsafe {
+            device.update_descriptor_sets(&[write_descriptor_set], &[]);
+        }
+
         Ok(Self {
             texture,
             view,
@@ -150,6 +293,9 @@ impl FontAtlas {
             extent,
             glyph_data: HashMap::new(),
             context,
+            descriptor_pool,
+            descriptor_set_layout,
+            descriptor_set,
         })
     }
 
@@ -161,16 +307,12 @@ impl FontAtlas {
         self.glyph_data.get(&c)
     }
 
-    pub fn image(&self) -> vk::Image {
-        self.texture
+    pub fn descriptor_set(&self) -> vk::DescriptorSet {
+        self.descriptor_set
     }
 
-    pub fn view(&self) -> vk::ImageView {
-        self.view
-    }
-
-    pub fn sampler(&self) -> vk::Sampler {
-        self.sampler
+    pub fn descriptor_set_layout(&self) -> vk::DescriptorSetLayout {
+        self.descriptor_set_layout
     }
 }
 
@@ -178,6 +320,8 @@ impl Drop for FontAtlas {
     fn drop(&mut self) {
         let device = self.context.device();
         unsafe {
+            device.destroy_descriptor_pool(self.descriptor_pool, None);
+            device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
             device.destroy_sampler(self.sampler, None);
             device.destroy_image_view(self.view, None);
             device.destroy_image(self.texture, None);

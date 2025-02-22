@@ -9,11 +9,48 @@ use std::sync::Arc;
 static MAIN_ENTRY_POINT: &CStr = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
 
 pub struct ShaderModule {
-    module: vk::ShaderModule,
     device: Arc<Device>,
+    module: vk::ShaderModule,
 }
 
 impl ShaderModule {
+    pub fn from_file(device: Arc<Device>, spirv_path: impl AsRef<Path>) -> Result<Self> {
+        let mut file = File::open(spirv_path).map_err(|e| {
+            VulkanError::ShaderCreation(format!("Failed to open shader file: {}", e))
+        })?;
+
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).map_err(|e| {
+            VulkanError::ShaderCreation(format!("Failed to read shader file: {}", e))
+        })?;
+
+        // Ensure the byte array length is a multiple of 4
+        if bytes.len() % 4 != 0 {
+            return Err(VulkanError::ShaderCreation(
+                "Invalid SPIR-V format".to_string(),
+            ));
+        }
+
+        let (prefix, words, suffix) = unsafe { bytes.align_to::<u32>() };
+        if !prefix.is_empty() || !suffix.is_empty() {
+            return Err(VulkanError::ShaderCreation(
+                "Invalid SPIR-V alignment".to_string(),
+            ));
+        }
+
+        let create_info = vk::ShaderModuleCreateInfo::builder()
+            .code(words)
+            .flags(vk::ShaderModuleCreateFlags::empty());
+
+        let module = unsafe {
+            device
+                .create_shader_module(&create_info, None)
+                .map_err(|e| VulkanError::ShaderCreation(e.to_string()))?
+        };
+
+        Ok(Self { device, module })
+    }
+
     pub fn new(device: Arc<Device>, spirv_path: impl AsRef<Path>) -> Result<Self> {
         let mut file = File::open(spirv_path).map_err(|e| {
             VulkanError::ShaderCreation(format!("Failed to open shader file: {}", e))
@@ -83,8 +120,8 @@ impl ShaderSet {
         vert_path: impl AsRef<Path>,
         frag_path: impl AsRef<Path>,
     ) -> Result<Self> {
-        let vertex = ShaderModule::new(device.clone(), vert_path)?;
-        let fragment = ShaderModule::new(device.clone(), frag_path)?;
+        let vertex = ShaderModule::from_file(device.clone(), vert_path)?;
+        let fragment = ShaderModule::from_file(device.clone(), frag_path)?;
 
         Ok(Self {
             vertex: Some(vertex),

@@ -1,6 +1,4 @@
 use ash::vk;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use winit::{
     event::{Event, WindowEvent},
@@ -9,72 +7,27 @@ use winit::{
 };
 
 use ashengine::{
-    config::{Config, ConfigLoader, ConfigManager},
+    config::{ConfigLoader, ConfigManager, TextBlocksConfig},
     context::Context,
     error::{Result as VkResult, VulkanError},
     helpers::{
         allocate_descriptor_sets, create_descriptor_pool, create_descriptor_set_layout,
         create_index_buffer, create_pipeline_layout, create_storage_buffer, create_vertex_buffer,
     },
+    shader::ShaderSet,
     text::{FontAtlas, TextElement, TextLayout, TextPicker},
     RenderPass, Renderer, Swapchain,
 };
 
+use log::{error, info};
 use std::error::Error;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TextBlocksConfig {
-    text_settings: TextSettings,
-    theme: Theme,
-    blocks: Vec<TextBlock>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TextSettings {
-    default_font: String,
-    font_size: f32,
-    line_height: f32,
-    letter_spacing: f32,
-    sdf_settings: SDFSettings,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct SDFSettings {
-    smoothing: f32,
-    thickness: f32,
-    padding: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Theme {
-    colors: HashMap<String, [f32; 4]>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TextBlock {
-    id: String,
-    content: String,
-    position: [f32; 2],
-    color: String,
-    scale: f32,
-    selectable: bool,
-}
-
-impl Config for TextBlocksConfig {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-
-    fn module_name(&self) -> &str {
-        "text_blocks"
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    info!("Starting Text Blocks Example");
+
     // Create window and event loop
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -83,8 +36,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(&event_loop)?;
 
     // Initialize Vulkan context and renderer
-    let context = Context::new(Some(&window))?;
+    let context = Arc::new(Context::new(Some(&window))?);
     let device = context.device();
+
+    // Create shader set
+    info!("Loading shaders");
+    let shader_set = ShaderSet::new(
+        device.clone(),
+        "engine/shaders/text.vert",
+        "engine/shaders/text.frag",
+    )?;
 
     // Create renderer
     let mut renderer = Renderer::new(
@@ -95,26 +56,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         context.instance(),
         context.surface_loader(),
         context.surface(),
+        shader_set,
     )?;
+
+    info!("Initializing configuration system");
 
     // Initialize configuration
     let config_manager = Arc::new(ConfigManager::new());
-    let mut config_loader = ConfigLoader::new(config_manager.clone())?;
+    let default_config = TextBlocksConfig::new();
+    config_manager.register(default_config);
+    let config_loader = ConfigLoader::new(config_manager.clone())?;
 
     // Load text blocks configuration
+    info!("Loading text blocks configuration from examples/text_blocks.ron");
     config_loader.load_config("examples/text_blocks.ron")?;
     let config = config_manager
         .get::<TextBlocksConfig>("text_blocks")
-        .ok_or_else(|| Box::new(VulkanError::General("Failed to get config".into())))?
-        .read()
-        .map_err(|e| Box::new(VulkanError::General(e.to_string())))?;
+        .ok_or_else(|| {
+            error!("Failed to get text_blocks config");
+            Box::new(VulkanError::General("Failed to get config".into()))
+        })?;
+
+    info!("Configuration loaded successfully");
 
     // Initialize text rendering components
-    let font_atlas = FontAtlas::new(device.clone(), 512, 512)?;
+    let font_atlas = FontAtlas::new(context.clone(), 512, 512)?;
     let mut text_layout = TextLayout::new();
     let text_picker = TextPicker::new(device.clone())?;
 
     // Create text elements from configuration
+    info!("Creating text elements from config");
     let text_elements: Vec<TextElement> = config
         .blocks
         .iter()
@@ -127,6 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             element_id: if block.selectable { idx as u32 + 1 } else { 0 },
         })
         .collect();
+
+    info!("Created {} text elements", text_elements.len());
 
     // Layout text elements
     text_layout.layout_text(&text_elements, &font_atlas);
@@ -171,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build(),
     ];
     let descriptor_set_layout = create_descriptor_set_layout(&device, &bindings)?;
-    let pipeline_layout = create_pipeline_layout(&device, &[descriptor_set_layout])?;
+    let _pipeline_layout = create_pipeline_layout(&device, &[descriptor_set_layout])?;
     let descriptor_sets =
         allocate_descriptor_sets(&device, descriptor_pool, &[descriptor_set_layout])?;
 
@@ -180,12 +153,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let index_data = text_layout.indices();
     let bbox_data = text_layout.bounding_boxes();
 
-    let (vertex_buffer, vertex_memory) = create_vertex_buffer(&device, &vertex_data)?;
-    let (index_buffer, index_memory) = create_index_buffer(&device, &index_data)?;
-    let (bbox_buffer, bbox_memory) = create_storage_buffer(&device, &bbox_data)?;
-    let (result_buffer, result_memory) = create_storage_buffer(&device, &[0u32, 0])?;
+    // Create buffers and store both the buffers and their memory
+    let vertex_buffer_data = create_vertex_buffer(&device, &vertex_data)?;
+    let index_buffer_data = create_index_buffer(&device, &index_data)?;
+    let bbox_buffer_data = create_storage_buffer(&device, &bbox_data)?;
+    let result_buffer_data = create_storage_buffer(&device, &[0u32, 0])?;
+
     // Initialize renderer with swapchain and shaders
-    renderer.initialize_swapchain(swapchain, render_pass, &[], &[])?; // TODO: Add shader loading
+    renderer.initialize_swapchain(swapchain, render_pass)?;
     let viewport = vk::Viewport {
         x: 0.0,
         y: 0.0,
@@ -205,6 +180,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Layout text elements
     text_layout.layout_text(&text_elements, &font_atlas);
+
+    info!("Starting event loop");
 
     // Main event loop
     event_loop.run(move |event, _, control_flow| {
@@ -228,8 +205,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Test for text intersection
                 text_picker.test_intersection(
                     renderer.current_command_buffer(),
-                    bbox_buffer,
-                    result_buffer,
+                    bbox_buffer_data.0,
+                    result_buffer_data.0,
                     descriptor_sets[0],
                     [x, y],
                     [0.0, 1.0], // Ray direction for 2D picking
@@ -247,14 +224,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 unsafe {
                     // Set viewport and scissor
-                    device.cmd_set_viewport(command_buffer, &[viewport]);
-                    device.cmd_set_scissor(command_buffer, &[scissor]);
+                    device.cmd_set_viewport(command_buffer, 0, &[viewport]);
+                    device.cmd_set_scissor(command_buffer, 0, &[scissor]);
 
                     // Bind vertex and index buffers
-                    device.cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer.0], &[0]);
+                    device.cmd_bind_vertex_buffers(
+                        command_buffer,
+                        0,
+                        &[vertex_buffer_data.0],
+                        &[0],
+                    );
                     device.cmd_bind_index_buffer(
                         command_buffer,
-                        index_buffer.0,
+                        index_buffer_data.0,
                         0,
                         vk::IndexType::UINT32,
                     );

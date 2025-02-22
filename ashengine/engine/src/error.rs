@@ -64,6 +64,12 @@ pub enum VulkanError {
     #[error("Failed to allocate command buffers: {0}")]
     CommandBufferAllocation(String),
 
+    #[error("Failed to begin command buffer: {0}")]
+    CommandBufferBegin(String),
+
+    #[error("Failed to end command buffer: {0}")]
+    CommandBufferEnd(String),
+
     #[error("Failed to allocate memory: {0}")]
     MemoryAllocation(String),
 
@@ -78,6 +84,12 @@ pub enum VulkanError {
 
     #[error("Failed to create fence: {0}")]
     FenceCreation(String),
+
+    #[error("Failed to submit queue: {0}")]
+    QueueSubmit(String),
+
+    #[error("Failed to wait for queue idle: {0}")]
+    QueueWaitIdle(String),
 
     #[error("Configuration error: {0}")]
     ConfigurationError(String),

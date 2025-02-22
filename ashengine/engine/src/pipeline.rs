@@ -1,4 +1,5 @@
 use crate::error::{Result, VulkanError};
+use crate::text::vertex::TextVertex;
 use ash::{vk, Device};
 use std::sync::Arc;
 
@@ -14,39 +15,28 @@ impl Pipeline {
         device: Arc<Device>,
         render_pass: vk::RenderPass,
         extent: vk::Extent2D,
-        vert_code: &[u8],
-        frag_code: &[u8],
+        shader_stages: &[vk::PipelineShaderStageCreateInfo],
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
     ) -> Result<Self> {
         log::debug!(
             "Creating graphics pipeline for extent: {}x{}",
             extent.width,
             extent.height
         );
-        let vert_shader_module = crate::utils::create_shader_module(&device, vert_code)?;
-        let frag_shader_module = crate::utils::create_shader_module(&device, frag_code)?;
-
-        let main_function_name = std::ffi::CString::new("main").unwrap();
-
-        let shader_stages = [
-            vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vert_shader_module)
-                .name(&main_function_name)
-                .build(),
-            vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(frag_shader_module)
-                .name(&main_function_name)
-                .build(),
-        ];
 
         // Dynamic state
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic_state =
             vk::PipelineDynamicStateCreateInfo::builder().dynamic_states(&dynamic_states);
 
-        // Vertex input state - no vertex input as it's hardcoded in the shader
-        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder();
+        // Vertex input state
+        let binding_description = TextVertex::get_binding_description();
+        let binding_descriptions = [binding_description];
+        let attribute_descriptions_array = TextVertex::get_attribute_descriptions();
+
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(&binding_descriptions)
+            .vertex_attribute_descriptions(&attribute_descriptions_array);
 
         let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -86,9 +76,16 @@ impl Pipeline {
             .sample_shading_enable(false)
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
+        // Enable alpha blending
         let color_blend_attachment = vk::PipelineColorBlendAttachmentState::builder()
             .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .blend_enable(false)
+            .blend_enable(true)
+            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+            .color_blend_op(vk::BlendOp::ADD)
+            .src_alpha_blend_factor(vk::BlendFactor::ONE)
+            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+            .alpha_blend_op(vk::BlendOp::ADD)
             .build();
 
         let color_blend_attachments = [color_blend_attachment];
@@ -97,8 +94,10 @@ impl Pipeline {
             .logic_op_enable(false)
             .attachments(&color_blend_attachments);
 
-        log::debug!("Creating pipeline layout");
-        let layout_info = vk::PipelineLayoutCreateInfo::builder();
+        log::debug!("Creating pipeline layout with descriptor set layouts");
+        let layout_info =
+            vk::PipelineLayoutCreateInfo::builder().set_layouts(descriptor_set_layouts);
+
         let layout = unsafe {
             device
                 .create_pipeline_layout(&layout_info, None)
@@ -128,12 +127,6 @@ impl Pipeline {
                 )
                 .map_err(|e| VulkanError::PipelineCreation(e.1.to_string()))?[0]
         };
-
-        log::debug!("Cleaning up shader modules");
-        unsafe {
-            device.destroy_shader_module(vert_shader_module, None);
-            device.destroy_shader_module(frag_shader_module, None);
-        }
 
         log::debug!("Pipeline created successfully");
         Ok(Self {

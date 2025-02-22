@@ -1,5 +1,5 @@
 use crate::error::{Result, VulkanError};
-use crate::{pipeline::Pipeline, render_pass::RenderPass, swapchain::Swapchain};
+use crate::{pipeline::Pipeline, render_pass::RenderPass, shader::ShaderSet, swapchain::Swapchain};
 use ash::{vk, Device, Instance};
 use std::sync::Arc;
 
@@ -21,12 +21,12 @@ pub struct Renderer {
     frames_in_flight: usize,
     graphics_queue: vk::Queue,
     current_image_index: Option<u32>,
-    vert_shader_code: Vec<u8>,
-    frag_shader_code: Vec<u8>,
     physical_device: vk::PhysicalDevice,
     instance: Arc<Instance>,
     surface_loader: Arc<ash::extensions::khr::Surface>,
     surface: vk::SurfaceKHR,
+    shader_set: ShaderSet,
+    descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
 }
 
 impl Renderer {
@@ -38,6 +38,8 @@ impl Renderer {
         instance: Arc<Instance>,
         surface_loader: Arc<ash::extensions::khr::Surface>,
         surface: vk::SurfaceKHR,
+        shader_set: ShaderSet,
+        descriptor_set_layouts: &[vk::DescriptorSetLayout],
     ) -> Result<Self> {
         let frames_in_flight = 2;
         log::debug!(
@@ -99,12 +101,12 @@ impl Renderer {
             frames_in_flight,
             graphics_queue,
             current_image_index: None,
-            vert_shader_code: Vec::new(),
-            frag_shader_code: Vec::new(),
             physical_device,
             instance,
             surface_loader,
             surface,
+            shader_set,
+            descriptor_set_layouts: descriptor_set_layouts.to_vec(),
         })
     }
 
@@ -144,16 +146,53 @@ impl Renderer {
 
             if let Some(render_pass) = &self.render_pass {
                 log::debug!("Recreating pipeline");
+                let shader_stages = self.shader_set.create_shader_stages();
                 self.pipeline = Some(Pipeline::new(
                     self.device.clone(),
                     render_pass.handle(),
                     swapchain.extent(),
-                    &self.vert_shader_code,
-                    &self.frag_shader_code,
+                    &shader_stages,
+                    &self.descriptor_set_layouts,
                 )?);
             }
         }
         log::debug!("Resize handled successfully");
+        Ok(())
+    }
+
+    pub fn initialize_swapchain(
+        &mut self,
+        swapchain: Swapchain,
+        render_pass: RenderPass,
+    ) -> Result<()> {
+        log::debug!("Initializing swapchain");
+
+        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(self.command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(self.frames_in_flight as u32);
+
+        let command_buffers = unsafe {
+            self.device
+                .allocate_command_buffers(&command_buffer_allocate_info)
+                .map_err(|e| VulkanError::CommandBufferAllocation(e.to_string()))?
+        };
+
+        log::debug!("Creating graphics pipeline");
+        let shader_stages = self.shader_set.create_shader_stages();
+        let pipeline = Pipeline::new(
+            self.device.clone(),
+            render_pass.handle(),
+            swapchain.extent(),
+            &shader_stages,
+            &self.descriptor_set_layouts,
+        )?;
+
+        self.pipeline = Some(pipeline);
+        self.command_buffers = command_buffers;
+        self.swapchain = Some(swapchain);
+        self.render_pass = Some(render_pass);
+        log::debug!("Swapchain initialization complete");
         Ok(())
     }
 
@@ -219,11 +258,6 @@ impl Renderer {
                             if let Some(pipeline) = &self.pipeline {
                                 log::debug!("Binding pipeline for drawing");
                                 pipeline.bind(command_buffer);
-                                log::debug!("Drawing triangle");
-                                unsafe {
-                                    self.device.cmd_draw(command_buffer, 3, 1, 0, 0);
-                                }
-                                log::debug!("Draw commands recorded successfully");
                             } else {
                                 log::warn!("No pipeline available for drawing");
                             }
@@ -319,47 +353,6 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn initialize_swapchain(
-        &mut self,
-        swapchain: Swapchain,
-        render_pass: RenderPass,
-        vert_shader: &[u8],
-        frag_shader: &[u8],
-    ) -> Result<()> {
-        log::debug!("Initializing swapchain");
-
-        self.vert_shader_code = vert_shader.to_vec();
-        self.frag_shader_code = frag_shader.to_vec();
-
-        let command_buffer_allocate_info = vk::CommandBufferAllocateInfo::builder()
-            .command_pool(self.command_pool)
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_buffer_count(self.frames_in_flight as u32);
-
-        let command_buffers = unsafe {
-            self.device
-                .allocate_command_buffers(&command_buffer_allocate_info)
-                .map_err(|e| VulkanError::CommandBufferAllocation(e.to_string()))?
-        };
-        log::debug!("Created {} command buffers", command_buffers.len());
-
-        log::debug!("Creating graphics pipeline");
-        let pipeline = Pipeline::new(
-            self.device.clone(),
-            render_pass.handle(),
-            swapchain.extent(),
-            vert_shader,
-            frag_shader,
-        )?;
-
-        self.pipeline = Some(pipeline);
-        self.command_buffers = command_buffers;
-        self.swapchain = Some(swapchain);
-        self.render_pass = Some(render_pass);
-        log::debug!("Swapchain initialization complete");
-        Ok(())
-    }
-
     pub fn image_available_semaphore(&self) -> vk::Semaphore {
         self.image_available_semaphores[self.current_frame]
     }
@@ -384,8 +377,11 @@ impl Renderer {
         self.command_buffers[self.current_frame]
     }
 
-    pub fn descriptor_sets(&self) -> &Vec<vk::DescriptorSet> {
-        panic!("Descriptor sets are not managed by the Renderer")
+    pub fn pipeline_layout(&self) -> vk::PipelineLayout {
+        self.pipeline.as_ref().map_or_else(
+            || panic!("Pipeline not initialized"),
+            |pipeline| pipeline.layout(),
+        )
     }
 }
 

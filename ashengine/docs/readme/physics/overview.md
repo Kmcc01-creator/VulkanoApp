@@ -95,6 +95,20 @@ For detailed information about each component, see their respective documentatio
 - [Constraints](./constraints.md)
 - [Spatial Partitioning](./spatial_partitioning.md)
 
+## Constraint Systems
+
+- [Constraint Systems Overview](./constraint_systems_overview.md)
+
+## Parallelism
+
+The physics system utilizes various parallel processing techniques to achieve high performance. These include:
+
+- [Current CPU Parallelism](./parallelism_current_cpu.md)
+- [GPU-Accelerated PBD](./parallelism_gpu_pbd.md)
+- [Hybrid Parallelism (CPU + GPU)](./parallelism_hybrid.md)
+- [Island-Based Constraint Solving](./parallelism_islands.md)
+- [Memory Allocation](./memory_allocation.md)
+
 ## Performance Considerations
 
 The physics system is optimized for performance in several ways:

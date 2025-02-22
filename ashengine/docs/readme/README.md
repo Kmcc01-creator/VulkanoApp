@@ -112,8 +112,6 @@ The project is organized into the following main directories:
 
 [Physics Overview](./physics/overview.md)
 
-### Rigid Bodies
-
 [Rigid Bodies](./physics/rigid_bodies.md)
 
 ### Soft Bodies

@@ -1,6 +1,6 @@
-use super::{ConfigManager, TextBlocksConfig};
+use super::{ConfigManager, EngineConfig, TextBlocksConfig};
 use crate::error::{Result, VulkanError};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs::File;
 use std::io::Read;
@@ -67,6 +67,22 @@ impl ConfigLoader {
                         "Failed to parse text blocks config: {}",
                         e
                     ))
+                    ))?;
+                self.config_manager.register(config);
+            }
+            Some(name) if name.contains("engine") => {
+                info!("Loading Engine config");
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).map_err(|e| {
+                    error!("Failed to read config file: {}", e);
+                    VulkanError::ConfigurationError(format!("Failed to read config file: {}", e))
+                })?;
+                let config: EngineConfig = toml::from_str(&contents).map_err(|e| {
+                    error!("Failed to parse engine config: {}", e);
+                    VulkanError::ConfigurationError(format!(
+                        "Failed to parse engine config: {}",
+                        e
+                    ))
                 })?;
                 self.config_manager.register(config);
             }
@@ -126,17 +142,23 @@ impl ConfigLoader {
                 {
                     for path in paths {
                         debug!("Config file modified: {:?}", path);
-                        if path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().contains("text_blocks"))
-                            .unwrap_or(false)
-                        {
-                            if let Ok(contents) = std::fs::read_to_string(&path) {
-                                if let Ok(new_config) =
-                                    toml::from_str::<TextBlocksConfig>(&contents)
-                                {
-                                    info!("Hot reloading TextBlocks config from {:?}", path);
-                                    config_manager.register(new_config);
+                        if let Ok(contents) = std::fs::read_to_string(&path) {
+                            let file_name = path.file_name().and_then(|n| n.to_str());
+                            match file_name {
+                                Some("text_blocks.toml") => {
+                                    if let Ok(new_config) = toml::from_str::<TextBlocksConfig>(&contents) {
+                                        info!("Hot reloading TextBlocks config from {:?}", path);
+                                        config_manager.register(new_config);
+                                    }
+                                }
+                                Some("engine.toml") => {
+                                     if let Ok(new_config) = toml::from_str::<EngineConfig>(&contents) {
+                                        info!("Hot reloading Engine config from {:?}", path);
+                                        config_manager.register(new_config);
+                                    }
+                                    }
+                                } else {
+                                    warn!("Unknown config type modified: {:?}", path);
                                 }
                             }
                         }

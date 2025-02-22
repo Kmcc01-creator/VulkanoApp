@@ -1,6 +1,30 @@
 mod text_blocks;
 
+use serde::Deserialize;
 pub use text_blocks::*;
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct EngineConfig {
+    pub engine: EngineSettings,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct EngineSettings {
+    pub physics_enabled: bool,
+    pub lighting_enabled: bool,
+}
+
+impl Config for EngineConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn module_name(&self) -> &str {
+        "engine"
+    }
+}
 
 use std::any::Any;
 use std::collections::HashMap;

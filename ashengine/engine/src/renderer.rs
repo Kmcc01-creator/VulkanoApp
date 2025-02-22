@@ -1,6 +1,14 @@
 use crate::error::{Result, VulkanError};
-use crate::{pipeline::Pipeline, render_pass::RenderPass, shader::ShaderSet, swapchain::Swapchain};
+use crate::{
+    lighting::Lighting,
+    physics::{PhysicsObject, PhysicsWorld},
+    pipeline::Pipeline,
+    render_pass::RenderPass,
+    shader::ShaderSet,
+    swapchain::Swapchain,
+};
 use ash::{vk, Device, Instance};
+use glam::Vec3;
 use std::sync::Arc;
 
 fn extent_to_array(extent: vk::Extent2D) -> [u32; 2] {
@@ -30,6 +38,8 @@ pub struct Renderer {
     surface: vk::SurfaceKHR,
     shader_set: ShaderSet,
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    physics_world: PhysicsWorld,
+    lighting: Lighting,
 }
 
 impl Renderer {
@@ -90,6 +100,32 @@ impl Renderer {
             log::debug!("Created synchronization objects for frame {}", i);
         }
 
+        // Initialize physics world
+        let mut physics_world = PhysicsWorld::new(Vec3::new(0.0, -9.81, 0.0)); // Example gravity
+
+        // Add some placeholder objects
+        physics_world.add_object(PhysicsObject {
+            position: Vec3::new(0.0, 10.0, 0.0),
+            velocity: Vec3::ZERO,
+            acceleration: Vec3::ZERO,
+            mass: 1.0,
+            bounding_box: Vec4::new(0.0, 0.0, 0.0, 1.0), // Assuming a unit cube for now
+        });
+        physics_world.add_object(PhysicsObject {
+            position: Vec3::new(2.0, 15.0, 0.0),
+            velocity: Vec3::ZERO,
+            acceleration: Vec3::ZERO,
+            mass: 2.0,
+            bounding_box: Vec4::new(0.0, 0.0, 0.0, 0.5), // Assuming a unit cube for now
+        });
+
+        // Initialize lighting
+        let lighting = Lighting {
+            ambient_color: Vec3::new(1.0, 1.0, 1.0),
+            ambient_intensity: 0.2,
+            directional_lights: vec![],
+        };
+
         Ok(Self {
             device,
             swapchain: None,
@@ -110,6 +146,8 @@ impl Renderer {
             surface,
             shader_set,
             descriptor_set_layouts: descriptor_set_layouts.to_vec(),
+            physics_world,
+            lighting,
         })
     }
 
@@ -277,6 +315,9 @@ impl Renderer {
         } else {
             log::warn!("No swapchain available");
         }
+
+        // Update physics world
+        self.physics_world.update(1.0 / 60.0); // Fixed delta time for now
 
         Ok(())
     }

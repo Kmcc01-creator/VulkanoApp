@@ -21,8 +21,11 @@ pub struct Renderer {
     frames_in_flight: usize,
     graphics_queue: vk::Queue,
     current_image_index: Option<u32>,
+    #[allow(dead_code)]
     physical_device: vk::PhysicalDevice,
+    #[allow(dead_code)]
     instance: Arc<Instance>,
+    #[allow(dead_code)]
     surface_loader: Arc<ash::extensions::khr::Surface>,
     surface: vk::SurfaceKHR,
     shader_set: ShaderSet,
@@ -126,20 +129,13 @@ impl Renderer {
             }
 
             log::debug!("Recreating swapchain");
-            swapchain.recreate(
-                self.physical_device,
-                self.device.clone(),
-                self.instance.clone(),
-                self.surface_loader.clone(),
-                self.surface,
-                dimensions,
-            )?;
+            swapchain.recreate(dimensions[0], dimensions[1], self.surface)?;
 
             // Recreate the render pass with the new swapchain's format and image views
             log::debug!("Recreating render pass");
             self.render_pass = Some(RenderPass::new(
                 self.device.clone(),
-                swapchain.surface_format().format,
+                swapchain.surface_format(),
                 swapchain.image_views(),
                 swapchain.extent(),
             )?);

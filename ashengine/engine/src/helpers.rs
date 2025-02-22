@@ -1,6 +1,5 @@
 use crate::error::{Result, VulkanError};
 use ash::vk;
-use std::sync::Arc;
 
 pub fn create_descriptor_pool(
     device: &ash::Device,

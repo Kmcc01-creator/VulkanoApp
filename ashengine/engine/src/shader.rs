@@ -1,6 +1,6 @@
 use crate::error::{Result, VulkanError};
 use ash::{vk, Device};
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;

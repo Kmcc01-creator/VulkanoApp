@@ -14,6 +14,7 @@ pub struct Context {
     physical_device: vk::PhysicalDevice,
     surface: vk::SurfaceKHR,
     surface_loader: Arc<ash::extensions::khr::Surface>,
+    swapchain_loader: Arc<ash::extensions::khr::Swapchain>,
     queue_family_index: u32,
     graphics_queue: vk::Queue,
 }
@@ -129,6 +130,7 @@ impl Context {
         };
 
         let graphics_queue = unsafe { device.get_device_queue(queue_family_index, 0) };
+        let swapchain_loader = Arc::new(ash::extensions::khr::Swapchain::new(&instance, &device));
 
         Ok(Self {
             _entry: entry,
@@ -137,6 +139,7 @@ impl Context {
             physical_device,
             surface,
             surface_loader,
+            swapchain_loader,
             queue_family_index,
             graphics_queue,
         })
@@ -168,6 +171,10 @@ impl Context {
 
     pub fn surface_loader(&self) -> Arc<ash::extensions::khr::Surface> {
         self.surface_loader.clone()
+    }
+
+    pub fn swapchain_loader(&self) -> Arc<ash::extensions::khr::Swapchain> {
+        self.swapchain_loader.clone()
     }
 }
 

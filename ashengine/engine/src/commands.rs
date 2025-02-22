@@ -68,6 +68,8 @@ enum CommandBufferState {
     Recording,
     Executable,
     Pending,
+    #[allow(dead_code)]
+    // Reserved for future error handling (e.g., device loss scenarios)
     Invalid,
 }
 

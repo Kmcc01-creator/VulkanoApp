@@ -1,9 +1,9 @@
-use super::{Config, ConfigManager, TextBlocksConfig};
+use super::{ConfigManager, TextBlocksConfig};
 use crate::error::{Result, VulkanError};
 use log::{debug, error, info};
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use ron::de::from_reader;
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, RwLock};
@@ -44,7 +44,7 @@ impl ConfigLoader {
             path.to_path_buf()
         };
 
-        let file = File::open(&canonical_path).map_err(|e| {
+        let mut file = File::open(&canonical_path).map_err(|e| {
             error!("Failed to open config file: {} at {:?}", e, canonical_path);
             VulkanError::ConfigurationError(format!("Failed to open config file: {}", e))
         })?;
@@ -56,7 +56,12 @@ impl ConfigLoader {
         match file_name.as_deref() {
             Some(name) if name.contains("text_blocks") => {
                 info!("Loading TextBlocks config");
-                let config: TextBlocksConfig = from_reader(file).map_err(|e| {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).map_err(|e| {
+                    error!("Failed to read config file: {}", e);
+                    VulkanError::ConfigurationError(format!("Failed to read config file: {}", e))
+                })?;
+                let config: TextBlocksConfig = toml::from_str(&contents).map_err(|e| {
                     error!("Failed to parse text blocks config: {}", e);
                     VulkanError::ConfigurationError(format!(
                         "Failed to parse text blocks config: {}",
@@ -121,13 +126,15 @@ impl ConfigLoader {
                 {
                     for path in paths {
                         debug!("Config file modified: {:?}", path);
-                        if let Ok(file) = File::open(&path) {
-                            if path
-                                .file_name()
-                                .map(|n| n.to_string_lossy().contains("text_blocks"))
-                                .unwrap_or(false)
-                            {
-                                if let Ok(new_config) = from_reader::<_, TextBlocksConfig>(file) {
+                        if path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().contains("text_blocks"))
+                            .unwrap_or(false)
+                        {
+                            if let Ok(contents) = std::fs::read_to_string(&path) {
+                                if let Ok(new_config) =
+                                    toml::from_str::<TextBlocksConfig>(&contents)
+                                {
                                     info!("Hot reloading TextBlocks config from {:?}", path);
                                     config_manager.register(new_config);
                                 }

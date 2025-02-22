@@ -12,15 +12,61 @@ use ashengine::{
         layout::{Rect, TextElement},
         TextAlignment, TextConfig, TextLayout, TextPicker,
     },
-    Result,
+    Result, VulkanError,
 };
 use log::info;
+// use serde::Deserialize; // Temporarily disabling serde deserialization
+use std::collections::HashMap;
+use std::fs::read_to_string;
 use std::sync::Arc;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+
+// #[derive(Deserialize, Debug, Clone)] // Temporarily disabling serde deserialization
+#[derive(Debug, Clone)]
+struct TextSettings {
+    default_font: String,
+    font_size: f32,
+    line_height: f32,
+    letter_spacing: f32,
+    sdf_settings: SdfSettings,
+}
+
+// #[derive(Deserialize, Debug, Clone)] // Temporarily disabling serde deserialization
+#[derive(Debug, Clone)]
+struct SdfSettings {
+    smoothing: f32,
+    thickness: f32,
+    padding: f32,
+}
+
+// #[derive(Deserialize, Debug, Clone)] // Temporarily disabling serde deserialization
+#[derive(Debug, Clone)]
+struct Theme {
+    colors: HashMap<String, [f32; 4]>,
+}
+
+// #[derive(Deserialize, Debug, Clone)] // Temporarily disabling serde deserialization
+#[derive(Debug, Clone)]
+struct TextBlock {
+    id: String,
+    content: String,
+    position: [f32; 2],
+    color: String,
+    scale: f32,
+    selectable: bool,
+}
+
+// #[derive(Deserialize, Debug, Clone)] // Temporarily disabling serde deserialization
+#[derive(Debug, Clone)]
+struct Config {
+    text_settings: TextSettings,
+    theme: Theme,
+    blocks: Vec<TextBlock>,
+}
 
 fn main() -> Result<()> {
     // Initialize logging
@@ -40,37 +86,173 @@ fn main() -> Result<()> {
     let context = Arc::new(Context::new(Some(&window))?);
     let device = context.device();
 
-    // Initialize configuration system
-    info!("Setting up configuration system");
-    let config_manager = Arc::new(ConfigManager::new());
-    let mut config_loader = ConfigLoader::new(config_manager.clone())?;
-
     // Load text configuration
     info!("Loading text configuration");
-    config_loader.load_config("examples/text_blocks.ron")?;
+    let config_str = read_to_string("engine/examples/text_blocks.toml")
+        .map_err(|e| VulkanError::General(format!("Failed to read config file: {}", e)))?;
+    // let config: Config = toml::from_str(&config_str)?; // Temporarily disabling toml deserialization
+
+    // Manual Config Construction (Temporary Workaround)
+    let config = {
+        let mut blocks: Vec<TextBlock> = Vec::new();
+        let mut text_settings = TextSettings {
+            default_font: "Arial".to_string(),
+            font_size: 16.0,
+            line_height: 1.2,
+            letter_spacing: 0.0,
+            sdf_settings: SdfSettings {
+                smoothing: 0.25,
+                thickness: 0.5,
+                padding: 4.0,
+            },
+        };
+        let mut theme = Theme {
+            colors: HashMap::new(),
+        };
+
+        // Very basic parsing -  assumes structure and doesn't handle errors
+        for line in config_str.lines() {
+            if line.starts_with("default_font") {
+                text_settings.default_font = line
+                    .split('=')
+                    .nth(1)
+                    .unwrap_or("Arial")
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
+            } else if line.starts_with("font_size") {
+                text_settings.font_size = line
+                    .split('=')
+                    .nth(1)
+                    .unwrap_or("16.0")
+                    .trim()
+                    .parse()
+                    .unwrap_or(16.0);
+            } else if line.starts_with("[[blocks]]") {
+                let mut block = TextBlock {
+                    id: "".to_string(),
+                    content: "".to_string(),
+                    position: [0.0, 0.0],
+                    color: "".to_string(),
+                    scale: 1.0,
+                    selectable: false,
+                };
+                blocks.push(block);
+            } else if let Some(last_block) = blocks.last_mut() {
+                if line.starts_with("id") {
+                    last_block.id = line
+                        .split('=')
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim()
+                        .trim_matches('"')
+                        .to_string();
+                } else if line.starts_with("content") {
+                    last_block.content = line
+                        .split('=')
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim()
+                        .trim_matches('"')
+                        .to_string();
+                } else if line.starts_with("position") {
+                    let pos_str = line.split('=').nth(1).unwrap_or("[0.0, 0.0]").trim();
+                    let pos_values: Vec<f32> = pos_str
+                        .trim_matches(|c| c == '[' || c == ']')
+                        .split(',')
+                        .map(|s| s.trim().parse().unwrap_or(0.0))
+                        .collect();
+                    if pos_values.len() == 2 {
+                        last_block.position = [pos_values[0], pos_values[1]];
+                    }
+                } else if line.starts_with("color") {
+                    last_block.color = line
+                        .split('=')
+                        .nth(1)
+                        .unwrap_or("")
+                        .trim()
+                        .trim_matches('"')
+                        .to_string();
+                } else if line.starts_with("scale") {
+                    last_block.scale = line
+                        .split('=')
+                        .nth(1)
+                        .unwrap_or("1.0")
+                        .trim()
+                        .parse()
+                        .unwrap_or(1.0);
+                } else if line.starts_with("selectable") {
+                    last_block.selectable = line
+                        .split('=')
+                        .nth(1)
+                        .unwrap_or("false")
+                        .trim()
+                        .parse()
+                        .unwrap_or(false);
+                }
+            } else if line.starts_with("primary")
+                || line.starts_with("secondary")
+                || line.starts_with("highlight")
+            {
+                let color_name = line.split('=').next().unwrap_or("").trim();
+                let color_str = line
+                    .split('=')
+                    .nth(1)
+                    .unwrap_or("[1.0, 1.0, 1.0, 1.0]")
+                    .trim();
+                let color_values: Vec<f32> = color_str
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split(',')
+                    .map(|s| s.trim().parse().unwrap_or(1.0))
+                    .collect();
+                if color_values.len() == 4 {
+                    theme.colors.insert(
+                        color_name.to_string(),
+                        [
+                            color_values[0],
+                            color_values[1],
+                            color_values[2],
+                            color_values[3],
+                        ],
+                    );
+                }
+            }
+        }
+
+        Config {
+            text_settings,
+            theme,
+            blocks,
+        }
+    };
 
     // Initialize text rendering components
     info!("Initializing text rendering components");
-    let mut font_atlas = FontAtlas::new(context.clone(), 512, 512)?;
+    let mut font_atlas = FontAtlas::new(context.clone(), 128, 128)?;
 
-    // Add some basic glyphs for testing
-    info!("Creating test glyphs");
-    for (i, c) in "Hello World".chars().enumerate() {
-        let x = (i as f32 / 11.0) * 0.1; // Spread characters across 0.0-0.1 UV space
-        font_atlas.add_glyph(
+    // Load and generate glyphs
+    info!("Loading font and generating glyphs");
+    font_atlas.load_font(
+        &config.text_settings.default_font,
+        "engine/examples/fonts/NotoSans-Regular.ttf",
+    )?;
+
+    // Generate glyphs for the title
+    for c in config.blocks[0].content.chars() {
+        font_atlas.generate_glyph(
             c,
-            Rect {
-                x,
-                y: 0.0,
-                width: 0.08, // Character width in UV space
-                height: 0.1, // Character height in UV space
-            },
-            GlyphMetrics {
-                advance: 32.0,
-                bearing: [0.0, 24.0],
-                size: [24.0, 24.0],
-            },
-        );
+            &config.text_settings.default_font,
+            config.text_settings.font_size * config.blocks[0].scale,
+        )?;
+    }
+
+    // Generate glyphs for the subtitle
+    for c in config.blocks[1].content.chars() {
+        font_atlas.generate_glyph(
+            c,
+            &config.text_settings.default_font,
+            config.text_settings.font_size * config.blocks[1].scale,
+        )?;
     }
 
     let mut text_layout = TextLayout::new();
@@ -123,25 +305,23 @@ fn main() -> Result<()> {
     info!("Initializing renderer with swapchain and render pass");
     renderer.initialize_swapchain(swapchain, render_pass)?;
 
-    // Create text configuration
-    info!("Setting up text configuration");
-    let text_config = TextConfig {
-        font_size: 24.0,
-        line_height: 1.5,
-        letter_spacing: 0.1,
-        alignment: TextAlignment::Left,
-        color: [1.0, 1.0, 1.0, 1.0],
-    };
-
     // Create text elements
     info!("Creating text elements");
-    let text_elements = vec![TextElement {
-        text: "Hello".to_string(),
-        position: [-0.5, 0.0], // Center of screen
-        color: [1.0, 1.0, 1.0, 1.0],
-        scale: text_config.font_size / 32.0,
-        element_id: 1,
-    }];
+    let mut text_elements: Vec<TextElement> = Vec::new();
+    for block in &config.blocks {
+        let color = config
+            .theme
+            .colors
+            .get(&block.color)
+            .unwrap_or(&[1.0, 1.0, 1.0, 1.0]);
+        text_elements.push(TextElement {
+            text: block.content.clone(),
+            position: block.position,
+            color: *color,
+            scale: block.scale, // Use scale directly from config
+            element_id: block.id.parse::<u32>().unwrap_or(0),
+        });
+    }
 
     // Layout text elements
     info!("Laying out text elements");
@@ -154,7 +334,6 @@ fn main() -> Result<()> {
     let (bbox_buffer, _bbox_memory) = create_storage_buffer(&device, text_layout.bounding_boxes())?;
 
     info!("Setup complete, entering main event loop");
-
     // Main event loop
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;

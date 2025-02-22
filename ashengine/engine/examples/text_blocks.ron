@@ -11,17 +11,17 @@
         ),
     ),
     theme: (
-        colors: {
-            "primary": (1.0, 1.0, 1.0, 1.0),
-            "secondary": (0.7, 0.7, 0.7, 1.0),
-            "highlight": (0.0, 0.8, 1.0, 1.0),
-        },
+        colors: (
+            "primary": [1.0, 1.0, 1.0, 1.0],
+            "secondary": [0.7, 0.7, 0.7, 1.0],
+            "highlight": [0.0, 0.8, 1.0, 1.0]
+        ),
     ),
     blocks: [
         (
             id: "title",
             content: "Hello World",
-            position: (0.0, 0.0),
+            position: [0.0, 0.0],
             color: "primary",
             scale: 2.0,
             selectable: true,
@@ -29,7 +29,7 @@
         (
             id: "subtitle",
             content: "Click to interact",
-            position: (0.0, 50.0),
+            position: [0.0, 50.0],
             color: "secondary",
             scale: 1.0,
             selectable: true,

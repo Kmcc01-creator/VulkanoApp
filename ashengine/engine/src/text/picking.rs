@@ -191,12 +191,10 @@ impl TextPicker {
             );
 
             // Push ray constants
-            let push_constants_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    (&push_constants as *const PushConstants) as *const u8,
-                    std::mem::size_of::<PushConstants>(),
-                )
-            };
+            let push_constants_bytes = std::slice::from_raw_parts(
+                (&push_constants as *const PushConstants) as *const u8,
+                std::mem::size_of::<PushConstants>(),
+            );
 
             self.device.cmd_push_constants(
                 command_buffer,

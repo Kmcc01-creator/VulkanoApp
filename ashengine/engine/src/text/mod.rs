@@ -1,9 +1,11 @@
 pub mod atlas;
+pub mod font;
 pub mod layout;
 pub mod picking;
 pub mod vertex;
 
 pub use atlas::{FontAtlas, GlyphInfo, GlyphMetrics};
+pub use font::FontManager;
 pub use layout::{BoundingBox, Rect, TextElement, TextLayout};
 pub use picking::TextPicker;
 pub use vertex::TextVertex;

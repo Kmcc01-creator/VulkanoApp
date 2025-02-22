@@ -12,8 +12,6 @@ pub mod shader;
 pub mod swapchain;
 pub mod text;
 
-use ash::vk;
-
 // Re-exports for convenience
 pub use error::{Result, VulkanError};
 pub use pipeline::Pipeline;
@@ -29,7 +27,7 @@ pub(crate) mod utils {
         device: &ash::Device,
         size: vk::DeviceSize,
         usage: vk::BufferUsageFlags,
-        _memory_properties: vk::MemoryPropertyFlags,
+        #[allow(unused_variables)] memory_properties: vk::MemoryPropertyFlags,
     ) -> crate::Result<(vk::Buffer, vk::DeviceMemory)> {
         let buffer_info = vk::BufferCreateInfo::builder()
             .size(size)
@@ -63,13 +61,16 @@ pub(crate) mod utils {
         Ok((buffer, memory))
     }
 
+    /// Creates a 2D image with the specified properties.
+    /// Currently unused but kept for future texture/image handling features.
+    #[allow(dead_code)]
     pub fn create_image(
         device: &ash::Device,
         width: u32,
         height: u32,
         format: vk::Format,
         usage: vk::ImageUsageFlags,
-        _memory_properties: vk::MemoryPropertyFlags,
+        #[allow(unused_variables)] memory_properties: vk::MemoryPropertyFlags,
     ) -> crate::Result<(vk::Image, vk::DeviceMemory)> {
         let image_info = vk::ImageCreateInfo::builder()
             .image_type(vk::ImageType::TYPE_2D)
@@ -114,6 +115,9 @@ pub(crate) mod utils {
         Ok((image, memory))
     }
 
+    /// Creates a shader module from raw SPIR-V bytecode.
+    /// Currently unused but kept for future shader loading features.
+    #[allow(dead_code)]
     pub fn create_shader_module(
         device: &ash::Device,
         code: &[u8],

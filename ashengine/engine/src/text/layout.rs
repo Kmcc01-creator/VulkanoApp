@@ -1,8 +1,6 @@
-use crate::error::Result;
 use crate::text::atlas::{FontAtlas, GlyphInfo};
 use crate::text::vertex::TextVertex;
 use ash::vk;
-use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoundingBox {
@@ -31,8 +29,11 @@ pub struct TextLayout {
     vertices: Vec<TextVertex>,
     indices: Vec<u32>,
     bounding_boxes: Vec<BoundingBox>,
+    #[allow(dead_code)] // These fields will be used when implementing Vulkan buffer management
     vertex_buffer: Option<vk::Buffer>,
+    #[allow(dead_code)]
     index_buffer: Option<vk::Buffer>,
+    #[allow(dead_code)]
     bbox_buffer: Option<vk::Buffer>,
 }
 
@@ -119,25 +120,25 @@ impl TextLayout {
         self.vertices.extend_from_slice(&[
             TextVertex {
                 position: [x0, y0],
-                tex_coords: [uv.x, uv.y],
+                tex_coord: [uv.x, uv.y],
                 color,
                 element_id,
             },
             TextVertex {
                 position: [x1, y0],
-                tex_coords: [uv.x + uv.width, uv.y],
+                tex_coord: [uv.x + uv.width, uv.y],
                 color,
                 element_id,
             },
             TextVertex {
                 position: [x1, y1],
-                tex_coords: [uv.x + uv.width, uv.y + uv.height],
+                tex_coord: [uv.x + uv.width, uv.y + uv.height],
                 color,
                 element_id,
             },
             TextVertex {
                 position: [x0, y1],
-                tex_coords: [uv.x, uv.y + uv.height],
+                tex_coord: [uv.x, uv.y + uv.height],
                 color,
                 element_id,
             },

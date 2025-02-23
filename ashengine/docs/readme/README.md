@@ -8,6 +8,8 @@ AshEngine is a Vulkan-based graphics engine written in Rust. This document provi
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Core Concepts](#core-concepts)
+  - [Architecture](#architecture)
+  - [Entity Component System](#entity-component-system)
   - [Context](#context)
   - [Renderer](#renderer)
   - [Swapchain](#swapchain)
@@ -31,6 +33,7 @@ AshEngine is a Vulkan-based graphics engine written in Rust. This document provi
 AshEngine aims to provide a flexible and efficient foundation for building graphics applications and games using Vulkan. It offers features such as:
 
 - Vulkan rendering pipeline management
+- Entity Component System (ECS) architecture
 - Swapchain handling
 - Shader loading and management
 - Mesh loading and rendering
@@ -48,9 +51,10 @@ The project is organized into the following main directories:
   - `src/`: Source code for the engine
     - `commands.rs`: Command buffer management
     - `context.rs`: Vulkan context initialization and management
+    - `ecs/`: Entity Component System implementation
     - `helpers.rs`: Utility functions
     - `lib.rs`: Core library functions
-    - `main.rs`: Main entry point (likely for examples)
+    - `main.rs`: Main entry point
     - `mesh.rs`: Mesh data structures and functions
     - `pipeline.rs`: Graphics pipeline management
     - `renderer.rs`: Main rendering loop
@@ -61,12 +65,6 @@ The project is organized into the following main directories:
     - `config/`: Configuration system
     - `memory/`: Memory management
     - `physics/`: Physics simulation system
-      - `mod.rs`: Physics module definitions
-      - `physics.rs`: Core physics world and objects
-      - `constraints.rs`: Constraint solvers
-      - `collision.rs`: Collision detection
-      - `spatial.rs`: Spatial partitioning
-      - `solver.rs`: Physics solver implementation
 - `examples/`: Example applications demonstrating engine usage
 - `docs/`: Documentation (this directory)
 
@@ -75,6 +73,14 @@ The project is organized into the following main directories:
 [Getting Started](./getting_started.md)
 
 ## Core Concepts
+
+### Architecture
+
+[Architecture](./architecture.md)
+
+### Entity Component System
+
+[Entity Component System](./ecs.md)
 
 ### Context
 

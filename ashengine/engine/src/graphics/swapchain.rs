@@ -1,8 +1,10 @@
 use ash::vk;
 use std::sync::Arc;
 
-use crate::context::Context;
-use crate::error::{Result, VulkanError};
+use crate::{
+    error::{Result, VulkanError},
+    graphics::context::Context,
+};
 
 pub struct Swapchain {
     swapchain: vk::SwapchainKHR,

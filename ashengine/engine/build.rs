@@ -1,30 +1,21 @@
-use std::path::Path;
-use std::process::Command;
+use std::path::PathBuf;
 
 fn main() {
-    // Create spv directory if it doesn't exist
-    let spv_dir = Path::new("shaders/spv");
-    std::fs::create_dir_all(spv_dir).unwrap();
+    println!("cargo:rerun-if-changed=src/physics/shaders/particle_update.comp");
 
-    // Compile vertex shader
-    println!("cargo:rerun-if-changed=shaders/text.vert");
-    let status = Command::new("glslc")
-        .args(&["shaders/text.vert", "-o", "shaders/spv/text.vert.spv"])
-        .status()
-        .expect("Failed to execute glslc command");
+    let mut compiler = shaderc::Compiler::new().unwrap();
+    let shader_source = PathBuf::from("src/physics/shaders/particle_update.comp");
 
-    if !status.success() {
-        panic!("Failed to compile vertex shader");
-    }
+    let artifact = compiler
+        .compile_into_spirv(
+            &std::fs::read_to_string(&shader_source).unwrap(),
+            shaderc::ShaderKind::Compute,
+            "particle_update.comp",
+            "main",
+            None,
+        )
+        .unwrap();
 
-    // Compile fragment shader
-    println!("cargo:rerun-if-changed=shaders/text.frag");
-    let status = Command::new("glslc")
-        .args(&["shaders/text.frag", "-o", "shaders/spv/text.frag.spv"])
-        .status()
-        .expect("Failed to execute glslc command");
-
-    if !status.success() {
-        panic!("Failed to compile fragment shader");
-    }
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    std::fs::write(out_dir.join("particle_update.spv"), artifact.as_binary_u8()).unwrap();
 }

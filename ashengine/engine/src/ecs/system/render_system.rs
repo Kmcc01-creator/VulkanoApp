@@ -148,7 +148,7 @@ impl RenderSystem {
     /// Collect and batch renderable entities
     fn collect_renderables(&mut self, world: &World) {
         for (_, (transform, renderer)) in world.query::<(&TransformComponent, &RenderComponent)>() {
-            if !renderer.should_render() {
+            if !renderer.should_render() || (self.frustum_culling && !renderer.culling_enabled()) {
                 continue;
             }
 

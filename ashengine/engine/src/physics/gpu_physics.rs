@@ -1,5 +1,5 @@
 use crate::physics::memory::{BufferPool, MemoryStats};
-use crate::physics::shaders::ShaderModule;
+use crate::physics::shaders::{compile_shader, ShaderModule};
 use ash::{self, vk};
 use std::ptr;
 use std::sync::Arc;
@@ -93,6 +93,7 @@ pub struct GpuPhysicsSystem {
     current_frame: usize,
     state: SystemState,
     max_recovery_attempts: u32,
+    pub debug_enabled: bool, // Make this field public
 }
 
 #[repr(C)]
@@ -134,6 +135,7 @@ impl GpuPhysicsSystem {
                 current_frame: 0,
                 state: SystemState::default(),
                 max_recovery_attempts: 3,
+                debug_enabled: false,
             })
         }
     }
@@ -211,6 +213,111 @@ impl GpuPhysicsSystem {
         Ok(())
     }
 
+    fn create_compute_pipeline(&mut self, shader_module: ShaderModule) -> Result<(), PhysicsError> {
+        // Create pipeline layout
+        let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
+            .set_layouts(&self.descriptor_sets.as_ref().unwrap().layout)
+            .push_constant_ranges(&[vk::PushConstantRange {
+                stage_flags: vk::ShaderStageFlags::COMPUTE,
+                offset: 0,
+                size: std::mem::size_of::<PushConstants>() as u32,
+            }])
+            .build();
+
+        let pipeline_layout = unsafe {
+            self.device
+                .create_pipeline_layout(&pipeline_layout_info, None)
+                .map_err(|e| {
+                    PhysicsError::InitializationFailed(format!(
+                        "Failed to create pipeline layout: {}",
+                        e
+                    ))
+                })?
+        };
+        self.pipeline_layout = Some(pipeline_layout);
+
+        // Create compute pipeline
+        let shader_entry_name = std::ffi::CString::new("main").unwrap();
+
+        // Add shader compilation options for debug
+        let mut compile_options = shaderc::CompileOptions::new().unwrap();
+        if self.debug_enabled {
+            compile_options.add_macro_definition("DEBUG", Some("1"));
+        }
+
+        let spirv_code = compile_shader(
+            include_str!("shaders/particle_update.comp"),
+            shaderc::ShaderKind::Compute,
+            "main",
+            Some(&compile_options), // Pass the options
+        )?;
+
+        let shader_module = ShaderModule::new(self.device.clone(), &spirv_code)?;
+
+        let shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
+            .stage(vk::ShaderStageFlags::COMPUTE)
+            .module(shader_module.get_module())
+            .name(&shader_entry_name);
+
+        // Set specialization constants for workgroup size
+        let specialization_map_entries = [
+            vk::SpecializationMapEntry {
+                constant_id: 0,
+                offset: 0,
+                size: std::mem::size_of::<u32>(),
+            },
+            vk::SpecializationMapEntry {
+                constant_id: 1,
+                offset: std::mem::size_of::<u32>() as u32,
+                size: std::mem::size_of::<u32>(),
+            },
+            vk::SpecializationMapEntry {
+                constant_id: 2,
+                offset: 2 * std::mem::size_of::<u32>() as u32,
+                size: std::mem::size_of::<u32>(),
+            },
+        ];
+
+        let workgroup_size_x = 256u32;
+        let workgroup_size_y = 1u32;
+        let workgroup_size_z = 1u32;
+
+        let specialization_data: [u32; 3] = [workgroup_size_x, workgroup_size_y, workgroup_size_z];
+
+        let specialization_info = vk::SpecializationInfo::builder()
+            .map_entries(&specialization_map_entries)
+            .data(unsafe {
+                std::slice::from_raw_parts(
+                    specialization_data.as_ptr() as *const u8,
+                    specialization_data.len() * std::mem::size_of::<u32>(),
+                )
+            });
+
+        let shader_stage_info = shader_stage_info
+            .specialization_info(&specialization_info)
+            .build();
+
+        let pipeline_info = vk::ComputePipelineCreateInfo::builder()
+            .layout(pipeline_layout)
+            .stage(shader_stage_info)
+            .build();
+
+        let compute_pipeline = unsafe {
+            self.device
+                .create_compute_pipelines(vk::PipelineCache::null(), &[pipeline_info], None)
+                .map_err(|e| {
+                    PhysicsError::InitializationFailed(format!(
+                        "Failed to create compute pipeline: {:?}",
+                        e
+                    ))
+                })?[0]
+        };
+
+        self.compute_pipeline = Some(compute_pipeline);
+
+        Ok(())
+    }
+
     pub fn resize(&mut self, new_particle_count: usize) -> Result<(), PhysicsError> {
         let new_size = (new_particle_count * std::mem::size_of::<Particle>()) as u64;
 
@@ -281,11 +388,10 @@ impl GpuPhysicsSystem {
         Ok(())
     }
 
+    // ... [Previous implementations with updated error handling] ...
     pub fn get_memory_stats(&self) -> MemoryStats {
         self.buffer_pool.get_memory_stats()
     }
-
-    // ... [Previous implementations with updated error handling] ...
 
     pub fn cleanup(&mut self) {
         if let Some(buffers) = &self.particle_buffers {

@@ -39,6 +39,12 @@ The GPU Physics System is a high-performance particle simulation system using Vu
   - Recent changes
   - Known issues
   - Future improvements
+- [Improvements Plan](improvements_plan.md)
+  - Enhanced error handling & logging
+  - Vulkan resource tracking
+  - Debug system improvements
+  - Memory management enhancements
+  - Performance monitoring
 
 ## Key Features
 

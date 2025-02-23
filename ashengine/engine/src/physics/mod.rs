@@ -54,6 +54,7 @@ pub fn create_physics_system(
     let config = config.unwrap_or_default();
 
     let mut physics = GpuPhysicsSystem::new(device, physical_device, queue_family_index)?;
+    physics.debug_enabled = config.debug_enabled; // Set the debug flag
 
     let mut debug = DebugVisualization::new(config.debug_sample_rate);
     if config.debug_enabled {

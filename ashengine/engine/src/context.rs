@@ -113,13 +113,26 @@ impl Context {
             .queue_family_index(queue_family_index)
             .queue_priorities(&[1.0]);
 
-        let device_features = vk::PhysicalDeviceFeatures::default();
-        let device_extensions = vec![ash::extensions::khr::Swapchain::name().as_ptr()];
+        let mut device_extensions = vec![ash::extensions::khr::Swapchain::name().as_ptr()];
+        device_extensions.push(ash::extensions::khr::ShaderNonSemanticInfo::name().as_ptr());
+
+        // Enable the DebugPrintf feature
+        let mut shader_non_semantic_info_features =
+            vk::PhysicalDeviceShaderNonSemanticInfoFeaturesKHR::builder()
+                .shader_debug_printf(true)
+                .build();
+
+        let mut device_features = vk::PhysicalDeviceFeatures2::builder()
+            .features(vk::PhysicalDeviceFeatures::default())
+            .push_next(&mut shader_non_semantic_info_features) // Chain the feature struct
+            .build();
 
         let device_create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(std::slice::from_ref(&queue_create_info))
-            .enabled_features(&device_features)
-            .enabled_extension_names(&device_extensions);
+            .enabled_features(&device_features.features) // Pass features, not the struct itself
+            .enabled_extension_names(&device_extensions)
+            .push_next(&mut device_features) // Chain the features struct for 1.1+ compatibility
+            .build();
 
         let device = unsafe {
             Arc::new(

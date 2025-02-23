@@ -1,6 +1,8 @@
 #version 450
 
-layout(local_size_x = 256) in;
+layout(constant_id = 0) const int local_size_x = 256;
+layout(constant_id = 1) const int local_size_y = 1;
+layout(constant_id = 2) const int local_size_z = 1;
 
 struct Particle {
     vec4 position;
@@ -10,7 +12,7 @@ struct Particle {
 struct PushConstants {
     float deltaTime;
     float maxVelocity;
-    vec2 bounds;  // x: min, y: max
+    vec2 bounds; // x: min, y: max
 };
 
 layout(std430, binding = 0) buffer ParticleBufferIn {
@@ -25,6 +27,10 @@ layout(push_constant) uniform pc {
     PushConstants params;
 };
 
+#ifdef DEBUG
+#extension GL_EXT_debug_printf : require
+#endif
+
 // Shared memory for coalesced memory access
 shared Particle shared_particles[32];
 
@@ -35,6 +41,10 @@ void main() {
 
     // Early exit for threads beyond particle count
     if (global_idx >= input_data.particles.length()) return;
+
+#ifdef DEBUG
+    debugPrintfEXT("Thread %d: Entered main function (Workgroup size: %d, %d, %d)\n", global_idx, gl_WorkGroupSize.x, gl_WorkGroupSize.y, gl_WorkGroupSize.z);
+#endif
 
     // Load data into shared memory for the first 32 threads in each workgroup
     if (local_idx < 32) {
@@ -59,6 +69,10 @@ void main() {
     vec3 pos = particle.position.xyz;
     vec3 vel = particle.velocity.xyz;
 
+#ifdef DEBUG
+    debugPrintfEXT("Thread %d: Position (%.2f, %.2f, %.2f), Velocity (%.2f, %.2f, %.2f)\n", global_idx, pos.x, pos.y, pos.z, vel.x, vel.y, vel.z);
+#endif
+
     // Update position based on velocity
     pos += vel * params.deltaTime;
 
@@ -70,8 +84,7 @@ void main() {
     if (below_min.x) {
         pos.x = params.bounds.x;
         vel.x = abs(vel.x);
-    }
-    else if (above_max.x) {
+    } else if (above_max.x) {
         pos.x = params.bounds.y;
         vel.x = -abs(vel.x);
     }
@@ -79,8 +92,7 @@ void main() {
     if (below_min.y) {
         pos.y = params.bounds.x;
         vel.y = abs(vel.y);
-    }
-    else if (above_max.y) {
+    } else if (above_max.y) {
         pos.y = params.bounds.y;
         vel.y = -abs(vel.y);
     }
@@ -88,8 +100,7 @@ void main() {
     if (below_min.z) {
         pos.z = params.bounds.x;
         vel.z = abs(vel.z);
-    }
-    else if (above_max.z) {
+    } else if (above_max.z) {
         pos.z = params.bounds.y;
         vel.z = -abs(vel.z);
     }
@@ -99,6 +110,10 @@ void main() {
     if (speed > params.maxVelocity) {
         vel = normalize(vel) * params.maxVelocity;
     }
+
+#ifdef DEBUG
+    debugPrintfEXT("Thread %d: Updated Position (%.2f, %.2f, %.2f), Updated Velocity (%.2f, %.2f, %.2f)\n", global_idx, pos.x, pos.y, pos.z, vel.x, vel.y, vel.z);
+#endif
 
     // Write results back to output buffer
     output_data.particles[global_idx].position = vec4(pos, 1.0);

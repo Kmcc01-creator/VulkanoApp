@@ -7,28 +7,115 @@ use std::time::{Duration, Instant};
 
 pub use crate::physics::debug::{DebugStats, DebugVisualization};
 
+use crate::physics::logging::{error_with_context, log_error_chain};
+use std::error::Error;
+
 #[derive(Debug)]
 pub enum PhysicsError {
-    DeviceLost(String),
-    OutOfMemory(String),
-    InitializationFailed(String),
-    InvalidOperation(String),
-    BufferOverflow(String),
-    SynchronizationError(String),
+    DeviceLost {
+        message: String,
+        source: Option<Box<dyn Error + Send + Sync>>,
+    },
+    OutOfMemory {
+        message: String,
+        size: u64,
+        available: u64,
+    },
+    InitializationFailed {
+        message: String,
+        component: String,
+        source: Option<Box<dyn Error + Send + Sync>>,
+    },
+    InvalidOperation {
+        message: String,
+        operation: String,
+        state: String,
+    },
+    BufferOverflow {
+        message: String,
+        required: u64,
+        available: u64,
+    },
+    SynchronizationError {
+        message: String,
+        source: Option<Box<dyn Error + Send + Sync>>,
+    },
 }
 
-impl std::error::Error for PhysicsError {}
+impl std::error::Error for PhysicsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::DeviceLost { source, .. } => source.as_ref().map(|e| e.as_ref()),
+            Self::InitializationFailed { source, .. } => source.as_ref().map(|e| e.as_ref()),
+            Self::SynchronizationError { source, .. } => source.as_ref().map(|e| e.as_ref()),
+            _ => None,
+        }
+    }
+}
 
 impl std::fmt::Display for PhysicsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PhysicsError::DeviceLost(msg) => write!(f, "Device Lost: {}", msg),
-            PhysicsError::OutOfMemory(msg) => write!(f, "Out of Memory: {}", msg),
-            PhysicsError::InitializationFailed(msg) => write!(f, "Initialization Failed: {}", msg),
-            PhysicsError::InvalidOperation(msg) => write!(f, "Invalid Operation: {}", msg),
-            PhysicsError::BufferOverflow(msg) => write!(f, "Buffer Overflow: {}", msg),
-            PhysicsError::SynchronizationError(msg) => write!(f, "Synchronization Error: {}", msg),
+            PhysicsError::DeviceLost { message, .. } => {
+                write!(f, "Device Lost: {}", message)
+            }
+            PhysicsError::OutOfMemory {
+                message,
+                size,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Out of Memory: {} (Required: {} bytes, Available: {} bytes)",
+                    message, size, available
+                )
+            }
+            PhysicsError::InitializationFailed {
+                message, component, ..
+            } => {
+                write!(f, "Initialization Failed for {}: {}", component, message)
+            }
+            PhysicsError::InvalidOperation {
+                message,
+                operation,
+                state,
+            } => {
+                write!(
+                    f,
+                    "Invalid Operation ({}): {} - Current State: {}",
+                    operation, message, state
+                )
+            }
+            PhysicsError::BufferOverflow {
+                message,
+                required,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Buffer Overflow: {} (Required: {} bytes, Available: {} bytes)",
+                    message, required, available
+                )
+            }
+            PhysicsError::SynchronizationError { message, .. } => {
+                write!(f, "Synchronization Error: {}", message)
+            }
         }
+    }
+}
+
+impl PhysicsError {
+    pub(crate) fn log_error(&self, file: &'static str, line: u32) {
+        let context = match self {
+            Self::DeviceLost { .. } => "DEVICE_LOST",
+            Self::OutOfMemory { .. } => "OUT_OF_MEMORY",
+            Self::InitializationFailed { component, .. } => component,
+            Self::InvalidOperation { operation, .. } => operation,
+            Self::BufferOverflow { .. } => "BUFFER_OVERFLOW",
+            Self::SynchronizationError { .. } => "SYNC_ERROR",
+        };
+
+        log_error_chain(self, context, file, line);
     }
 }
 
@@ -145,11 +232,25 @@ impl GpuPhysicsSystem {
         particle_count: usize,
         shader_module: ShaderModule,
     ) -> Result<(), PhysicsError> {
+        use crate::physics::logging::info_with_context;
+
+        info_with_context!(
+            "INIT",
+            "Initializing GPU Physics System with {} particles",
+            particle_count
+        );
+
         if self.state.needs_reset {
+            info_with_context!("RECOVERY", "System needs reset, attempting recovery");
             self.try_recover()?;
         }
 
         let buffer_size = (particle_count * std::mem::size_of::<Particle>()) as u64;
+        info_with_context!(
+            "MEMORY",
+            "Allocating particle buffers with size: {} bytes",
+            buffer_size
+        );
 
         // Create particle buffers using buffer pool
         let (front_buffer, front_memory, front_offset) = self.buffer_pool.allocate_buffer(
@@ -173,10 +274,17 @@ impl GpuPhysicsSystem {
                     vk::MemoryMapFlags::empty(),
                 )
                 .map_err(|e| {
-                    PhysicsError::InitializationFailed(format!(
-                        "Failed to map front buffer memory: {}",
+                    error_with_context!(
+                        "MEMORY",
+                        "Failed to map front buffer memory at offset {}: {}",
+                        front_offset,
                         e
-                    ))
+                    );
+                    PhysicsError::InitializationFailed {
+                        message: format!("Failed to map front buffer memory: {}", e),
+                        component: "BufferMapping".to_string(),
+                        source: Some(Box::new(e)),
+                    }
                 })?;
 
             let back_ptr = self
@@ -188,10 +296,17 @@ impl GpuPhysicsSystem {
                     vk::MemoryMapFlags::empty(),
                 )
                 .map_err(|e| {
-                    PhysicsError::InitializationFailed(format!(
-                        "Failed to map back buffer memory: {}",
+                    error_with_context!(
+                        "MEMORY",
+                        "Failed to map back buffer memory at offset {}: {}",
+                        back_offset,
                         e
-                    ))
+                    );
+                    PhysicsError::InitializationFailed {
+                        message: format!("Failed to map back buffer memory: {}", e),
+                        component: "BufferMapping".to_string(),
+                        source: Some(Box::new(e)),
+                    }
                 })?;
 
             self.particle_buffers = Some(ParticleBufferPair {
@@ -214,7 +329,12 @@ impl GpuPhysicsSystem {
     }
 
     fn create_compute_pipeline(&mut self, shader_module: ShaderModule) -> Result<(), PhysicsError> {
+        use crate::physics::logging::{debug_with_context, info_with_context};
+
+        info_with_context!("PIPELINE", "Creating compute pipeline");
+
         // Create pipeline layout
+        debug_with_context!("PIPELINE", "Building pipeline layout with push constants");
         let pipeline_layout_info = vk::PipelineLayoutCreateInfo::builder()
             .set_layouts(&self.descriptor_sets.as_ref().unwrap().layout)
             .push_constant_ranges(&[vk::PushConstantRange {
@@ -228,31 +348,58 @@ impl GpuPhysicsSystem {
             self.device
                 .create_pipeline_layout(&pipeline_layout_info, None)
                 .map_err(|e| {
-                    PhysicsError::InitializationFailed(format!(
-                        "Failed to create pipeline layout: {}",
-                        e
-                    ))
+                    error_with_context!("PIPELINE", "Failed to create pipeline layout: {}", e);
+                    PhysicsError::InitializationFailed {
+                        message: format!("Failed to create pipeline layout: {}", e),
+                        component: "PipelineLayout".to_string(),
+                        source: Some(Box::new(e)),
+                    }
                 })?
         };
+
+        info_with_context!("PIPELINE", "Pipeline layout created successfully");
         self.pipeline_layout = Some(pipeline_layout);
 
         // Create compute pipeline
         let shader_entry_name = std::ffi::CString::new("main").unwrap();
 
-        // Add shader compilation options for debug
+        debug_with_context!("SHADER", "Configuring shader compilation options");
         let mut compile_options = shaderc::CompileOptions::new().unwrap();
         if self.debug_enabled {
+            debug_with_context!("SHADER", "Debug mode enabled, adding DEBUG macro");
             compile_options.add_macro_definition("DEBUG", Some("1"));
         }
 
-        let spirv_code = compile_shader(
+        info_with_context!("SHADER", "Compiling particle update compute shader");
+        let spirv_code = match compile_shader(
             include_str!("shaders/particle_update.comp"),
             shaderc::ShaderKind::Compute,
             "main",
-            Some(&compile_options), // Pass the options
-        )?;
+            Some(&compile_options),
+        ) {
+            Ok(code) => code,
+            Err(e) => {
+                error_with_context!("SHADER", "Failed to compile compute shader: {}", e);
+                return Err(PhysicsError::InitializationFailed {
+                    message: format!("Failed to compile compute shader: {}", e),
+                    component: "ShaderCompilation".to_string(),
+                    source: Some(Box::new(e)),
+                });
+            }
+        };
 
-        let shader_module = ShaderModule::new(self.device.clone(), &spirv_code)?;
+        info_with_context!("SHADER", "Creating shader module from SPIR-V code");
+        let shader_module = match ShaderModule::new(self.device.clone(), &spirv_code) {
+            Ok(module) => module,
+            Err(e) => {
+                error_with_context!("SHADER", "Failed to create shader module: {}", e);
+                return Err(PhysicsError::InitializationFailed {
+                    message: format!("Failed to create shader module: {}", e),
+                    component: "ShaderModule".to_string(),
+                    source: Some(Box::new(e)),
+                });
+            }
+        };
 
         let shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::COMPUTE)

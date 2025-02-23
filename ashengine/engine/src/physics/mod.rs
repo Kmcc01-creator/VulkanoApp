@@ -5,17 +5,28 @@
 //! - Memory pooling and dynamic resizing
 //! - Debug visualization and profiling support
 //! - Comprehensive error handling and recovery
+//! - Enhanced logging and error tracking
 
 mod debug;
 mod gpu_physics;
+pub mod logging;
 mod memory;
 mod shaders;
 
-pub use gpu_physics::{GpuPhysicsSystem, Particle, PhysicsError, PushConstants, SystemState};
-
 pub use debug::{DebugStats, DebugVisualization, ParticleDebugView};
-
+pub use gpu_physics::{GpuPhysicsSystem, Particle, PhysicsError, PushConstants, SystemState};
 pub use memory::{BufferPool, MemoryStats};
+
+// Re-export logging macros and initialization
+pub use logging::{
+    debug_with_context, error_with_context, info_with_context, init_logging, warn_with_context,
+};
+
+// Initialize logging when the module is loaded
+pub fn initialize() {
+    logging::init_logging();
+    info_with_context!("PHYSICS", "GPU Physics System initialized with logging");
+}
 
 /// Configuration options for initializing the physics system
 #[derive(Debug, Clone)]

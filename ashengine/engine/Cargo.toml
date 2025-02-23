@@ -21,6 +21,8 @@ memoffset = "0.9"
 fontdue = "0.7"
 glam = "0.24"
 gltf = "1.5"
+chrono = "0.4"
+serde_json = "1.0"
 
 [build-dependencies]
 shaderc = "0.8"
